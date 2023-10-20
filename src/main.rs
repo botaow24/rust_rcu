@@ -17,7 +17,8 @@ struct Node{
 }
 
 struct World{
-    node: * mut Node,
+    //node: * mut Node,
+    node:Arc<Node>,
     user:AtomicU32,
 }
 
@@ -26,9 +27,19 @@ unsafe impl Sync for World {}
 
 fn thread_checker(world: Arc< World>,id:u32){
     println!("checker Start id #{}",id);
-
+    
+    
 
     println!("checker End id #{}",id);
+}
+
+
+fn gen_node() -> Node
+{
+    static mut gid: u32 = 0;
+    let n = Node{id:gid,accept :0,reject:0,payload :Vec::new()};
+
+    return n;
 }
 
 fn thread_creator(world: Arc<World>)
@@ -36,7 +47,7 @@ fn thread_creator(world: Arc<World>)
     println!("creator Start");
     while true
     {
-        if world.
+        
     }
 
 
@@ -47,7 +58,7 @@ fn thread_creator(world: Arc<World>)
 
 fn main() {
    
-    let mut world = Arc::new(World {node:null_mut(),user : AtomicU32::new(0)});
+    let mut world = Arc::new(World {node:Arc::new(gen_node()),user : AtomicU32::new(0)});
     let mut handles = vec![];
     for id in [2, 3, 5, 7, 11, 13, 17, 19] {      
         let wc = world.clone();
