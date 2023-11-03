@@ -4,50 +4,111 @@
 //use std::cmp::Ordering;
 use std::thread;
 //use std::time::Duration;
-use std::sync::atomic::AtomicU32;
-use std::ptr::{self, null_mut};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU32,AtomicI32, Ordering};
+//use std::ptr::{self, null_mut};
+use std::sync::{Arc, RwLock};
+
+use rand::Rng;
+//use rand::distributions::Uniform;
+
+static N_THREADS:u32 = 8;
 
 
-struct Node{
-    id:u32,
-    accept :u32,
-    reject :u32,
-    payload : Vec<u32>
+
+struct Node
+{    
+    id:AtomicI32,
+    accept:AtomicU32,
+    reject:AtomicU32,
+   
+    payload:Vec<u32> ,
 }
 
 struct World{
     //node: * mut Node,
     node:Arc<Node>,
-    user:AtomicU32,
+    //user:AtomicU32,
 }
 
 unsafe impl Send for World {}
 unsafe impl Sync for World {}
 
-fn thread_checker(world: Arc< World>,id:u32){
+fn thread_checker(world: Arc<RwLock<World>>,id:u32){
     println!("checker Start id #{}",id);
-    
-    
+    let mut last_value: i32 = -1;
+    loop
+    {
+        let guard = world.read().unwrap();
+        let now_id = guard.node.id.load(Ordering::Acquire);
+        if last_value == now_id
+        {
+            if guard.node.accept.load(Ordering::Acquire) == N_THREADS
+                {
+                    break;
+                }
+        }
+        else 
+        {
+            last_value = now_id;
+            let mut valid:bool = true;
+            let mut idx = 0;
+            
+            for value in &guard.node.payload
+            {
+                if id == *value
+                {
+                    println!("thread {} reject Node{} @ {}",id,now_id,idx);
+                    valid = false;
+                    break;
+                }
+                idx += 1;
+            }
+             
+            if valid
+            {
+                println!("thread {} accept Node{}",id,now_id);
+                guard.node.accept.fetch_add(1, Ordering::AcqRel);
+            }
+            else 
+            {
+                guard.node.reject.fetch_add(1, Ordering::AcqRel);
+            }
+             
+        }
 
+        
+    }
     println!("checker End id #{}",id);
 }
 
 
 fn gen_node() -> Node
 {
-    static mut gid: u32 = 0;
-    let n = Node{id:gid,accept :0,reject:0,payload :Vec::new()};
-
+    static mut GID: i32 = 0;
+    let mut rng = rand::thread_rng();
+    let vals: Vec<u32> = (0..2000).map(|_| rng.gen_range(0..2000)).collect();
+    unsafe { GID += 1 };
+    let n = Node{id : AtomicI32::new(unsafe { GID }) ,accept :AtomicU32::new(0),reject:AtomicU32::new(0),payload :vals};
     return n;
 }
 
-fn thread_creator(world: Arc<World>)
+fn thread_creator(mut _world: Arc<RwLock<World>>)
 {
     println!("creator Start");
-    while true
+    
+    loop
     {
-        
+        if _world.read().unwrap().node.reject.load(Ordering::Acquire) != 0
+        {
+            let new_node: Node = gen_node();
+            println!("Creating new Block{}",new_node.id.load(Ordering::Relaxed));
+            _world.write().unwrap().node = Arc::new(new_node);
+            
+        }
+        else if _world.read().unwrap().node.accept.load(Ordering::Acquire) == N_THREADS
+        {
+            break;
+        }
     }
 
 
@@ -58,7 +119,7 @@ fn thread_creator(world: Arc<World>)
 
 fn main() {
    
-    let mut world = Arc::new(World {node:Arc::new(gen_node()),user : AtomicU32::new(0)});
+    let world = Arc::new( RwLock::new(World{node:Arc::new(gen_node())}));
     let mut handles = vec![];
     for id in [2, 3, 5, 7, 11, 13, 17, 19] {      
         let wc = world.clone();
