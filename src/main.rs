@@ -7,6 +7,7 @@ use std::thread;
 use std::sync::atomic::{AtomicU32,AtomicI32, Ordering};
 //use std::ptr::{self, null_mut};
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 use rand::Rng;
 //use rand::distributions::Uniform;
@@ -57,7 +58,7 @@ fn thread_checker(world: Arc<RwLock<World>>,id:u32){
             {
                 if id == *value
                 {
-                    println!("thread {} reject Node{} @ {}",id,now_id,idx);
+                    //println!("thread {} reject Node{} @ {}",id,now_id,idx);
                     valid = false;
                     break;
                 }
@@ -66,7 +67,7 @@ fn thread_checker(world: Arc<RwLock<World>>,id:u32){
              
             if valid
             {
-                println!("thread {} accept Node{}",id,now_id);
+                //println!("thread {} accept Node{}",id,now_id);
                 guard.node.accept.fetch_add(1, Ordering::AcqRel);
             }
             else 
@@ -78,7 +79,7 @@ fn thread_checker(world: Arc<RwLock<World>>,id:u32){
 
         
     }
-    println!("checker End id #{}",id);
+    println!("checker End id #{} LastCheck: {}",id,last_value);
 }
 
 
@@ -86,7 +87,7 @@ fn gen_node() -> Node
 {
     static mut GID: i32 = 0;
     let mut rng = rand::thread_rng();
-    let vals: Vec<u32> = (0..2000).map(|_| rng.gen_range(0..2000)).collect();
+    let vals: Vec<u32> = (0..512).map(|_| rng.gen_range(1..512)).collect();
     unsafe { GID += 1 };
     let n = Node{id : AtomicI32::new(unsafe { GID }) ,accept :AtomicU32::new(0),reject:AtomicU32::new(0),payload :vals};
     return n;
@@ -101,7 +102,7 @@ fn thread_creator(mut _world: Arc<RwLock<World>>)
         if _world.read().unwrap().node.reject.load(Ordering::Acquire) != 0
         {
             let new_node: Node = gen_node();
-            println!("Creating new Block{}",new_node.id.load(Ordering::Relaxed));
+            //println!("Creating new Block{}",new_node.id.load(Ordering::Relaxed));
             _world.write().unwrap().node = Arc::new(new_node);
             
         }
@@ -118,7 +119,7 @@ fn thread_creator(mut _world: Arc<RwLock<World>>)
 
 
 fn main() {
-   
+    let now = Instant::now();
     let world = Arc::new( RwLock::new(World{node:Arc::new(gen_node())}));
     let mut handles = vec![];
     for id in [2, 3, 5, 7, 11, 13, 17, 19] {      
@@ -137,6 +138,8 @@ fn main() {
     for handle in handles {
         handle.join().unwrap();
     }
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
     println!("Exit ");
 }
 
