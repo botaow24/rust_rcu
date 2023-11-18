@@ -1,4 +1,5 @@
 
+use std::num::Wrapping;
 //use std::io;
 //use rand::Rng;
 //use std::cmp::Ordering;
@@ -6,11 +7,15 @@ use std::thread;
 //use std::time::Duration;
 use std::sync::atomic::{AtomicU32,AtomicI32, Ordering};
 //use std::ptr::{self, null_mut};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Mutex};
 use std::time::Instant;
 
 use rand::Rng;
+
+mod RcuGP;
 //use rand::distributions::Uniform;
+
+
 
 static N_THREADS:u32 = 8;
 
@@ -27,61 +32,9 @@ struct Node
 
 struct World{
     //node: * mut Node,
-    node:Arc<Node>,
+    node:Node,
     //user:AtomicU32,
 }
-
-unsafe impl Send for World {}
-unsafe impl Sync for World {}
-
-fn thread_checker(world: Arc<RwLock<World>>,id:u32){
-    println!("checker Start id #{}",id);
-    let mut last_value: i32 = -1;
-    loop
-    {
-        let guard = world.read().unwrap();
-        let now_id = guard.node.id.load(Ordering::Acquire);
-        if last_value == now_id
-        {
-            if guard.node.accept.load(Ordering::Acquire) == N_THREADS
-                {
-                    break;
-                }
-        }
-        else 
-        {
-            last_value = now_id;
-            let mut valid:bool = true;
-            let mut idx = 0;
-            
-            for value in &guard.node.payload
-            {
-                if id == *value
-                {
-                    //println!("thread {} reject Node{} @ {}",id,now_id,idx);
-                    valid = false;
-                    break;
-                }
-                idx += 1;
-            }
-             
-            if valid
-            {
-                //println!("thread {} accept Node{}",id,now_id);
-                guard.node.accept.fetch_add(1, Ordering::AcqRel);
-            }
-            else 
-            {
-                guard.node.reject.fetch_add(1, Ordering::AcqRel);
-            }
-             
-        }
-
-        
-    }
-    println!("checker End id #{} LastCheck: {}",id,last_value);
-}
-
 
 fn gen_node() -> Node
 {
@@ -93,48 +46,66 @@ fn gen_node() -> Node
     return n;
 }
 
-fn thread_creator(mut _world: Arc<RwLock<World>>)
-{
-    println!("creator Start");
-    
-    loop
+
+
+fn thread_checker(world: RcuGP::RcuGPLock<World>,id:u32){
+    println!("checker Start id #{}",id);
+    let mut last_value: i32 = -1;
+    loop{
+        let guard = world.read();
+        let now_id = guard.node.id.load(Ordering::Acquire);
+    if last_value == now_id
     {
-        if _world.read().unwrap().node.reject.load(Ordering::Acquire) != 0
-        {
-            let new_node: Node = gen_node();
-            //println!("Creating new Block{}",new_node.id.load(Ordering::Relaxed));
-            _world.write().unwrap().node = Arc::new(new_node);
-            
-        }
-        else if _world.read().unwrap().node.accept.load(Ordering::Acquire) == N_THREADS
-        {
-            break;
-        }
+        if guard.node.accept.load(Ordering::Acquire) == N_THREADS
+            {
+                break;
+            }
     }
-
-
-    println!("creator End");
+    else 
+    {
+        last_value = now_id;
+        let mut valid:bool = true;
+        let mut idx = 0;
+        
+        for value in &guard.node.payload
+        {
+            if id == *value
+            {
+                println!("thread {} reject Node{} @ {}",id,now_id,idx);
+                valid = false;
+                break;
+            }
+            idx += 1;
+        }
+         
+        if valid
+        {
+            println!("thread {} accept Node{}",id,now_id);
+            guard.node.accept.fetch_add(1, Ordering::AcqRel);
+        }
+        else 
+        {
+            guard.node.reject.fetch_add(1, Ordering::AcqRel);
+        }
+         
+    }
+    }   
 }
 
-
-
-fn main() {
+fn testGP() {
     let now = Instant::now();
-    let world = Arc::new( RwLock::new(World{node:Arc::new(gen_node())}));
+    let world: World= World{node:gen_node()};
+    let shared = Arc::new(RcuGP::RcuGPShared::new((N_THREADS+1).try_into().unwrap(),world));
     let mut handles = vec![];
     for id in [2, 3, 5, 7, 11, 13, 17, 19] {      
-        let wc = world.clone();
+
+        let wc = RcuGP::RcuGPLock::new(shared.clone());
+        
         let handle = thread::spawn( move || {thread_checker(wc,id);});
         handles.push(handle);
         
-        
     }
-    {
-        let wc = world.clone();
-        let handle = thread::spawn( move|| {thread_creator(wc);});
-        handles.push(handle);
-    }   
-
+ 
     for handle in handles {
         handle.join().unwrap();
     }
@@ -143,3 +114,7 @@ fn main() {
     println!("Exit ");
 }
 
+
+fn main() {
+    testGP();
+}
