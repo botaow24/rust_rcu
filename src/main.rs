@@ -13,7 +13,9 @@ use std::time::Instant;
 
 use rand::Rng;
 
-mod RcuGP;
+mod rcu_gp;
+mod rcu_qsbr;
+mod rcu_base;
 //use rand::distributions::Uniform;
 
 static N_THREADS: u32 = 8;
@@ -40,7 +42,7 @@ fn gen_node() -> Node {
     return n;
 }
 
-fn thread_checker(world: RcuGP::RcuGPLock<Node>, id: u32) {
+fn thread_checker(world: rcu_gp::RcuGPLock<Node>, id: u32) {
     println!("checker Start id #{}", id);
     let mut last_value: i32 = -1;
     loop {
@@ -77,7 +79,24 @@ fn thread_checker(world: RcuGP::RcuGPLock<Node>, id: u32) {
     println!("checker Exit id #{}", id);
 }
 
-fn thread_creator(_world: RcuGP::RcuGPLock<Node>) {
+fn thread_creator_qsbr(_world: rcu_qsbr::RcuQsbr<Node>) {
+    println!("creator Start");
+
+    loop {
+        let v = _world.read().reject.load(Ordering::Acquire).clone();
+        if v != 0 {
+            let new_node = gen_node();
+            println!("Creating new Block{}", new_node.id.load(Ordering::Relaxed));
+            _world.replace(new_node);
+        } else if _world.read().accept.load(Ordering::Acquire) == N_THREADS {
+            break;
+        }
+    }
+
+    println!("creator Exit");
+}
+
+fn thread_creator(_world: rcu_gp::RcuGPLock<Node>) {
     println!("creator Start");
 
     loop {
@@ -93,18 +112,18 @@ fn thread_creator(_world: RcuGP::RcuGPLock<Node>) {
     println!("creator Exit");
 }
 
-fn testGP() {
+fn test_gp() {
     let now = Instant::now();
     let node: Node  =  gen_node() ;
-    let shared: Arc<RcuGP::RcuGPShared<Node>> = Arc::new(RcuGP::RcuGPShared::new(
+    let shared: Arc<rcu_gp::RcuGPShared<Node>> = Arc::new(rcu_gp::RcuGPShared::new(
         (N_THREADS + 1).try_into().unwrap(),
         node,
     ));
-    println!("{}  {}   {}" ,mem::size_of::<Node>(),mem::size_of::<RcuGP::RcuGPShared<Node>>(),mem::size_of::<RcuGP::RcuGPShared<u32>>());
+    println!("{}  {}   {}", mem::size_of::<Node>(), mem::size_of::<rcu_gp::RcuGPShared<Node>>(), mem::size_of::<rcu_gp::RcuGPShared<u32>>());
 
     let mut handles = vec![];
     for id in [2, 3, 5, 7, 11, 13, 17, 19] {
-        let wc = RcuGP::RcuGPLock::new(shared.clone());
+        let wc = rcu_gp::RcuGPLock::new(shared.clone());
 
         let handle = thread::spawn(move || {
             thread_checker(wc, id);
@@ -113,9 +132,82 @@ fn testGP() {
     }
 
     {
-        let wc = RcuGP::RcuGPLock::new(shared.clone());
+        let wc = rcu_gp::RcuGPLock::new(shared.clone());
         let handle = thread::spawn(move || {
             thread_creator(wc);
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
+    println!("Exit ");
+}
+
+fn thread_checker_qsbr(world: rcu_qsbr::RcuQsbr<Node>, id: u32) {
+    println!("checker Start id #{}", id);
+    let mut last_value: i32 = -1;
+    loop {
+        let guard = world.read();
+        let now_id = guard.id.load(Ordering::Acquire);
+        //println!("thread {} read Node{}", id, now_id);
+        if last_value == now_id {
+            if guard.accept.load(Ordering::Acquire) == N_THREADS {
+                break;
+            }
+        } else {
+            last_value = now_id;
+            let mut valid: bool = true;
+            let mut idx = 0;
+
+            //thread::sleep(time::Duration::from_millis(1000));
+
+            for value in &guard.payload {
+                if id == *value {
+                    println!("thread {} reject Node{} @ {}", id, now_id, idx);
+                    valid = false;
+                    break;
+                }
+                idx += 1;
+            }
+
+            if valid {
+                println!("thread {} accept Node{}", id, now_id);
+                guard.accept.fetch_add(1, Ordering::AcqRel);
+            } else {
+                guard.reject.fetch_add(1, Ordering::AcqRel);
+            }
+        }
+    }
+    println!("checker Exit id #{}", id);
+}
+
+fn test_qsbr() {
+    let now = Instant::now();
+    let node: Node = gen_node();
+    let shared: Arc<rcu_qsbr::RcuQsbrShared<Node>> = Arc::new(rcu_qsbr::RcuQsbrShared::new(
+        (N_THREADS+1).try_into().unwrap(),
+        node,
+    ));
+    println!("{}  {}   {}", mem::size_of::<Node>(), mem::size_of::<rcu_qsbr::RcuQsbrShared<Node>>(), mem::size_of::<rcu_qsbr::RcuQsbrShared<u32>>());
+
+    let mut handles = vec![];
+    for id in [2, 3, 5, 7, 11, 13, 17, 19] {
+        let wc = rcu_qsbr::RcuQsbr::new(shared.clone());
+
+        let handle = thread::spawn(move || {
+            thread_checker_qsbr(wc, id);
+        });
+        handles.push(handle);
+    }
+
+    {
+        let wc = rcu_qsbr::RcuQsbr::new(shared.clone());
+        let handle = thread::spawn(move || {
+            thread_creator_qsbr(wc);
         });
         handles.push(handle);
     }
@@ -131,6 +223,6 @@ fn testGP() {
 fn main() {
     loop
     {
-    testGP();
+        test_qsbr();
     }
 }

@@ -122,7 +122,7 @@ fn thread_creator(mut _world: Arc<RwLock<World>>)
 
 
 
-fn testRW() {
+fn test_rw() {
     let now = Instant::now();
     let world = Arc::new( RwLock::new(World{node:gen_node()}));
     let mut handles = vec![];
