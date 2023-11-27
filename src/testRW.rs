@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use rand::Rng;
 
-mod RcuGP;
+mod rcu_gp;
 //use rand::distributions::Uniform;
 
 
