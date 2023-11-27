@@ -151,7 +151,7 @@ impl<T> RcuGPLock<T> {
 
     pub fn replace(&self, new_data:T) -> RcuGpWriteGuard<'_, T>
     {
-        
+
         return RcuGpWriteGuard::new(self,new_data);
     }
 
@@ -180,6 +180,7 @@ impl<T> RcuGPLock<T> {
     }
 
     fn synchronize_rcu(&self) {
+        println!("synchronize_rcu");
         smp_mb();
         {
             let _lg = self.global_info.mtx.lock().unwrap();
