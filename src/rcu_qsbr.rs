@@ -55,7 +55,7 @@ impl <'a, T: 'a> Drop for RcuQsbrReadGuard<'a, T> {
     fn drop(&mut self) {
         //println!("drop read guard at thread {}",self.inner_lock.thread_id);
         self.inner_lock.read_unlock();
-        todo!("add calling of quiescent_state somewhere");
+        self.inner_lock.quiescent_state();
     }
 }
 
@@ -139,18 +139,21 @@ impl<T> RcuQsbr<T> {
     }
 
     pub fn update_counter_and_wait(&self) {
-        println!("update_counter_and_wait");
+        //println!("update_counter_and_wait");
         let id = self.thread_id;
         self.global_info.global_ctr.fetch_add(RCU_GP_CTR, Ordering::SeqCst);
         barrier();
+        self.quiescent_state();
+        barrier();
+        let mut cnt = 0;
         for ctr in &self.global_info.thread_ctr {
-            let v = ctr.load(Ordering::SeqCst);
-            let global_ctr = self.global_info.global_ctr.load(Ordering::Acquire);
-            println!("{} {} {}", v, global_ctr, id);
+            let mut v = ctr.load(Ordering::SeqCst);
+            let global_ctr = self.global_info.global_ctr.load(Ordering::Relaxed);
             while v!=0 && v != global_ctr {
-                //sleep(std::time::Duration::from_millis(1000));
                 std::thread::yield_now();
+                v = ctr.load(Ordering::SeqCst);
             }
+            cnt += 1;
         }
     }
 
@@ -158,8 +161,6 @@ impl<T> RcuQsbr<T> {
         smp_mb();
         let id = self.thread_id;
         let v = self.global_info.global_ctr.load(Ordering::Acquire);
-        //println!("quiescent_state {} {}", v, id);
-        //sleep(std::time::Duration::from_millis(1000));
         self.global_info.thread_ctr[id].store(v, Ordering::Release);
         smp_mb();
     }
