@@ -1,13 +1,11 @@
 use std::cell::UnsafeCell;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicI32, AtomicU32, Ordering, AtomicPtr, AtomicBool};
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicU32, Ordering, AtomicPtr};
+use std::sync::Arc;
 
 use std::sync::Mutex;
 use std::thread::sleep;
-
-use crate::rcu_base::{barrier, smp_mb};
 
 const RCU_GP_ONLINE: u32 = 0x1;
 const RCU_GP_CTR: u32 = 0x2;
@@ -16,6 +14,9 @@ pub struct RcuQsbr<T> {
     thread_id: usize,
     global_info: Arc<RcuQsbrShared<T>>,
 }
+
+pub fn barrier() {}
+pub fn smp_mb() {}
 
 pub struct RcuQsbrShared<T> {
     thread_counter: AtomicU32,
