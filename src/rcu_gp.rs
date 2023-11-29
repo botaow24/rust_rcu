@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicI32, AtomicU32, Ordering, AtomicPtr};
+use std::sync::atomic::{AtomicI32, AtomicPtr, AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 
 use std::sync::Mutex;
@@ -15,7 +15,7 @@ pub struct RcuGPShared<T> {
 
     mtx: Mutex<i32>,
 
-    data_ptr : AtomicPtr<T>,
+    data_ptr: AtomicPtr<T>,
     data: Mutex<Box<UnsafeCell<T>>>,
 }
 
@@ -38,22 +38,20 @@ impl<T> RcuGPShared<T> {
         for r in 0..count {
             my_vec.push(AtomicU32::new(0));
         }
-        let mut bx : Box<UnsafeCell<T>> = Box::new(data.into());
+        let mut bx: Box<UnsafeCell<T>> = Box::new(data.into());
         return RcuGPShared {
             thread_counter: AtomicU32::new(0),
             global_ctr: AtomicU32::new(0),
             thread_ctr: my_vec,
             mtx: Mutex::new(0),
-            data_ptr: AtomicPtr:: new(bx.as_mut().get_mut()) ,
+            data_ptr: AtomicPtr::new(bx.as_mut().get_mut()),
             data: Mutex::new(bx),
         };
     }
 }
 
-
 unsafe impl<T> Send for RcuGPShared<T> {}
 unsafe impl<T> Sync for RcuGPShared<T> {}
-
 
 pub struct RcuGpWriteGuard<'a, T: 'a> {
     // NB: we use a pointer instead of `&'a T` to avoid `noalias` violations, because a
@@ -64,18 +62,17 @@ pub struct RcuGpWriteGuard<'a, T: 'a> {
     data: Box<UnsafeCell<T>>,
 }
 
-
-
 impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
     pub fn new(lock: &'a RcuGPLock<T>, mut new_data: T) -> Self {
-
-        lock.global_info.data_ptr.store(& mut new_data, Ordering::Release);
         let mut mtx = lock.global_info.data.lock().unwrap();
-        let mut bx : Box<UnsafeCell<T>> = Box::new(new_data.into());
-        let old = std::mem::replace(&mut *mtx,bx);
+        let mut bx: Box<UnsafeCell<T>> = Box::new(new_data.into());
+        let old = std::mem::replace(&mut *mtx, bx);
+        lock.global_info
+            .data_ptr
+            .store(mtx.as_mut().get(), Ordering::Release);
         return RcuGpWriteGuard {
             inner_lock: lock,
-            data: old
+            data: old,
         };
     }
 }
@@ -86,9 +83,7 @@ impl<'a, T> Drop for RcuGpWriteGuard<'a, T> {
     }
 }
 
-
-
-pub struct RcuGpReadGuard<'a, T:  'a> {
+pub struct RcuGpReadGuard<'a, T: 'a> {
     // NB: we use a pointer instead of `&'a T` to avoid `noalias` violations, because a
     // `Ref` argument doesn't hold immutability for its whole scope, only until it drops.
     // `NonNull` is also covariant over `T`, just like we would have with `&T`. `NonNull`
@@ -97,13 +92,12 @@ pub struct RcuGpReadGuard<'a, T:  'a> {
     inner_lock: &'a RcuGPLock<T>,
 }
 
-
-
-
 impl<'a, T: 'a> RcuGpReadGuard<'a, T> {
     pub fn new(lock: &'a RcuGPLock<T>) -> Self {
         return RcuGpReadGuard {
-            data: unsafe { NonNull::new_unchecked(lock.global_info.data_ptr.load(Ordering::Acquire)) },
+            data: unsafe {
+                NonNull::new_unchecked(lock.global_info.data_ptr.load(Ordering::Acquire))
+            },
             inner_lock: lock,
         };
     }
@@ -149,10 +143,8 @@ impl<T> RcuGPLock<T> {
         return RcuGpReadGuard::new(self);
     }
 
-    pub fn replace(&self, new_data:T) -> RcuGpWriteGuard<'_, T>
-    {
-
-        return RcuGpWriteGuard::new(self,new_data);
+    pub fn replace(&self, new_data: T) -> RcuGpWriteGuard<'_, T> {
+        return RcuGpWriteGuard::new(self, new_data);
     }
 
     fn read_lock(&self) {
@@ -180,7 +172,7 @@ impl<T> RcuGPLock<T> {
     }
 
     fn synchronize_rcu(&self) {
-        println!("synchronize_rcu");
+        //println!("synchronize_rcu");
         smp_mb();
         {
             let _lg = self.global_info.mtx.lock().unwrap();

@@ -15,7 +15,7 @@ use rand::Rng;
 
 mod rcu_gp;
 mod rcu_qsbr;
-mod rcu_base;
+//mod rcu_base;
 //use rand::distributions::Uniform;
 
 static N_THREADS: u32 = 8;
@@ -61,7 +61,7 @@ fn thread_checker(world: rcu_gp::RcuGPLock<Node>, id: u32) {
 
             for value in &guard.payload {
                 if id == *value {
-                    println!("thread {} reject Node{} @ {}", id, now_id, idx);
+                    //println!("thread {} reject Node{} @ {}", id, now_id, idx);
                     valid = false;
                     break;
                 }
@@ -69,7 +69,7 @@ fn thread_checker(world: rcu_gp::RcuGPLock<Node>, id: u32) {
             }
 
             if valid {
-                println!("thread {} accept Node{}", id, now_id);
+                //println!("thread {} accept Node{}", id, now_id);
                 guard.accept.fetch_add(1, Ordering::AcqRel);
             } else {
                 guard.reject.fetch_add(1, Ordering::AcqRel);
@@ -80,46 +80,46 @@ fn thread_checker(world: rcu_gp::RcuGPLock<Node>, id: u32) {
 }
 
 fn thread_creator_qsbr(_world: rcu_qsbr::RcuQsbr<Node>) {
-    println!("creator Start");
+    println!("Writer Start");
 
     loop {
         let v = _world.read().reject.load(Ordering::Acquire).clone();
         if v != 0 {
             let new_node = gen_node();
-            println!("Creating new Block{}", new_node.id.load(Ordering::Relaxed));
+            //println!("Creating new Block{}", new_node.id.load(Ordering::Relaxed));
             _world.replace(new_node);
         } else if _world.read().accept.load(Ordering::Acquire) == N_THREADS {
             break;
         }
     }
 
-    println!("creator Exit");
+    println!("Writer Exit");
 }
 
 fn thread_creator(_world: rcu_gp::RcuGPLock<Node>) {
-    println!("creator Start");
+    println!("Writer Start");
 
     loop {
         if _world.read().reject.load(Ordering::Acquire) != 0 {
             let new_node = gen_node();
-            println!("Creating new Block{}", new_node.id.load(Ordering::Relaxed));
+            //println!("Creating new Block{}", new_node.id.load(Ordering::Relaxed));
             _world.replace(new_node);
         } else if _world.read().accept.load(Ordering::Acquire) == N_THREADS {
             break;
         }
     }
 
-    println!("creator Exit");
+    println!("Writer Exit");
 }
 
 fn test_gp() {
+    println!("Test GP");
     let now = Instant::now();
     let node: Node  =  gen_node() ;
     let shared: Arc<rcu_gp::RcuGPShared<Node>> = Arc::new(rcu_gp::RcuGPShared::new(
         (N_THREADS + 1).try_into().unwrap(),
         node,
     ));
-    println!("{}  {}   {}", mem::size_of::<Node>(), mem::size_of::<rcu_gp::RcuGPShared<Node>>(), mem::size_of::<rcu_gp::RcuGPShared<u32>>());
 
     let mut handles = vec![];
     for id in [2, 3, 5, 7, 11, 13, 17, 19] {
@@ -138,13 +138,14 @@ fn test_gp() {
         });
         handles.push(handle);
     }
-
+    
     for handle in handles {
         handle.join().unwrap();
     }
+    
     let elapsed = now.elapsed();
     println!("Elapsed: {:.2?}", elapsed);
-    println!("Exit ");
+    //println!("Exit ");
 }
 
 fn thread_checker_qsbr(world: rcu_qsbr::RcuQsbr<Node>, id: u32) {
@@ -167,7 +168,7 @@ fn thread_checker_qsbr(world: rcu_qsbr::RcuQsbr<Node>, id: u32) {
 
             for value in &guard.payload {
                 if id == *value {
-                    println!("thread {} reject Node{} @ {}", id, now_id, idx);
+                    //println!("thread {} reject Node{} @ {}", id, now_id, idx);
                     valid = false;
                     break;
                 }
@@ -175,7 +176,7 @@ fn thread_checker_qsbr(world: rcu_qsbr::RcuQsbr<Node>, id: u32) {
             }
 
             if valid {
-                println!("thread {} accept Node{}", id, now_id);
+                //println!("thread {} accept Node{}", id, now_id);
                 guard.accept.fetch_add(1, Ordering::AcqRel);
             } else {
                 guard.reject.fetch_add(1, Ordering::AcqRel);
@@ -192,7 +193,6 @@ fn test_qsbr() {
         (N_THREADS+1).try_into().unwrap(),
         node,
     ));
-    println!("{}  {}   {}", mem::size_of::<Node>(), mem::size_of::<rcu_qsbr::RcuQsbrShared<Node>>(), mem::size_of::<rcu_qsbr::RcuQsbrShared<u32>>());
 
     let mut handles = vec![];
     for id in [2, 3, 5, 7, 11, 13, 17, 19] {
@@ -223,6 +223,7 @@ fn test_qsbr() {
 fn main() {
     loop
     {
-        test_qsbr();
+        test_gp();
+        //test_qsbr();
     }
 }
