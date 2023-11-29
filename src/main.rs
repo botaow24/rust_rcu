@@ -42,7 +42,7 @@ fn gen_node() -> Node {
     return n;
 }
 
-fn thread_checker(world: rcu_gp::RcuGPLock<Node>, id: u32) {
+fn thread_checker(world: rcu_gp::RcuCell<Node>, id: u32) {
     println!("checker Start id #{}", id);
     let mut last_value: i32 = -1;
     loop {
@@ -96,14 +96,15 @@ fn thread_creator_qsbr(_world: rcu_qsbr::RcuQsbr<Node>) {
     println!("Writer Exit");
 }
 
-fn thread_creator(_world: rcu_gp::RcuGPLock<Node>) {
+fn thread_creator(_world: rcu_gp::RcuCell<Node>) {
     println!("Writer Start");
 
     loop {
         if _world.read().reject.load(Ordering::Acquire) != 0 {
             let new_node = gen_node();
-            //println!("Creating new Block{}", new_node.id.load(Ordering::Relaxed));
-            _world.replace(new_node);
+            let mut lock = _world.replace(new_node);
+            let old = lock.get_old();
+
         } else if _world.read().accept.load(Ordering::Acquire) == N_THREADS {
             break;
         }
@@ -123,7 +124,7 @@ fn test_gp() {
 
     let mut handles = vec![];
     for id in [2, 3, 5, 7, 11, 13, 17, 19] {
-        let wc = rcu_gp::RcuGPLock::new(shared.clone());
+        let wc = rcu_gp::RcuCell::new(shared.clone());
 
         let handle = thread::spawn(move || {
             thread_checker(wc, id);
@@ -132,7 +133,7 @@ fn test_gp() {
     }
 
     {
-        let wc = rcu_gp::RcuGPLock::new(shared.clone());
+        let wc = rcu_gp::RcuCell::new(shared.clone());
         let handle = thread::spawn(move || {
             thread_creator(wc);
         });

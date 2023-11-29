@@ -1,8 +1,9 @@
 use std::cell::UnsafeCell;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicI32, AtomicPtr, AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicPtr, AtomicU32, Ordering,fence};
+use std::sync::Arc;
+
 
 use std::sync::Mutex;
 
@@ -19,13 +20,14 @@ pub struct RcuGPShared<T> {
     data: Mutex<Box<UnsafeCell<T>>>,
 }
 
-fn barrier() {}
+fn barrier() {fence(Ordering::SeqCst);}
+fn smp_mb() { fence(Ordering::SeqCst)}
 
 const RCU_NEST_MASK: u32 = 0x0ffff;
 const RCU_GP_CTR_PHASE: u32 = 0x10000;
 const RCU_NEST_COUNT: u32 = 0x1;
 
-fn smp_mb() {}
+
 
 fn is_busy(ctr: &AtomicU32, global_ctr: u32) -> bool {
     let value = ctr.load(Ordering::Relaxed);
@@ -58,28 +60,41 @@ pub struct RcuGpWriteGuard<'a, T: 'a> {
     // `Ref` argument doesn't hold immutability for its whole scope, only until it drops.
     // `NonNull` is also covariant over `T`, just like we would have with `&T`. `NonNull`
     // is preferable over `const* T` to allow for niche optimization.
-    inner_lock: &'a RcuGPLock<T>,
-    data: Box<UnsafeCell<T>>,
+    inner_lock: &'a RcuCell<T>,
+    data: Option<Box<UnsafeCell<T>>>   ,
+    is_unlocked:bool,
 }
 
 impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
-    pub fn new(lock: &'a RcuGPLock<T>, mut new_data: T) -> Self {
+    pub fn new(lock: &'a RcuCell<T>, new_data: T) -> Self {
         let mut mtx = lock.global_info.data.lock().unwrap();
         let mut bx: Box<UnsafeCell<T>> = Box::new(new_data.into());
         let old = std::mem::replace(&mut *mtx, bx);
         lock.global_info
             .data_ptr
             .store(mtx.as_mut().get(), Ordering::Release);
+        
         return RcuGpWriteGuard {
             inner_lock: lock,
-            data: old,
+            data: Some(old),
+            is_unlocked:false,
         };
+    }
+
+    pub fn get_old(&mut self) ->Box<UnsafeCell<T>>
+    {
+        self.inner_lock.synchronize_rcu();
+        self.is_unlocked = true;
+        return  std::mem::take(&mut self.data).unwrap();
     }
 }
 
 impl<'a, T> Drop for RcuGpWriteGuard<'a, T> {
     fn drop(&mut self) {
-        self.inner_lock.synchronize_rcu();
+        if self.is_unlocked == false
+        {
+            self.inner_lock.synchronize_rcu();
+        }
     }
 }
 
@@ -89,11 +104,11 @@ pub struct RcuGpReadGuard<'a, T: 'a> {
     // `NonNull` is also covariant over `T`, just like we would have with `&T`. `NonNull`
     // is preferable over `const* T` to allow for niche optimization.
     data: NonNull<T>,
-    inner_lock: &'a RcuGPLock<T>,
+    inner_lock: &'a RcuCell<T>,
 }
 
 impl<'a, T: 'a> RcuGpReadGuard<'a, T> {
-    pub fn new(lock: &'a RcuGPLock<T>) -> Self {
+    pub fn new(lock: &'a RcuCell<T>) -> Self {
         return RcuGpReadGuard {
             data: unsafe {
                 NonNull::new_unchecked(lock.global_info.data_ptr.load(Ordering::Acquire))
@@ -118,20 +133,17 @@ impl<'a, T> Drop for RcuGpReadGuard<'a, T> {
     }
 }
 
-pub struct RcuGPLock<T> {
-    dammy: AtomicU32,
-
+pub struct RcuCell<T> {
     thread_id: usize,
 
     global_info: Arc<RcuGPShared<T>>,
 }
 
-impl<T> RcuGPLock<T> {
+impl<T> RcuCell<T> {
     pub fn new(shared: Arc<RcuGPShared<T>>) -> Self {
         let tc = shared.thread_counter.fetch_add(1, Ordering::SeqCst);
 
-        return RcuGPLock {
-            dammy: AtomicU32::new(0),
+        return RcuCell {
             thread_id: tc as usize,
             global_info: shared,
         };
