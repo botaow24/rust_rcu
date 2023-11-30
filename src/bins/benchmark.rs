@@ -10,8 +10,8 @@ use rcu::rcu_gp;
 //mod rcu_base;
 //use rand::distributions::Uniform;
 
-static N_THREADS: u32 = 8;
-
+static N_READERS: u32 = 6;
+static N_WRITER:u32=1;
 struct Node {
     payload: Vec<u32>,
 }
@@ -98,14 +98,14 @@ pub fn benchmark_gp() {
         let now = Instant::now();
         let node: Node = gen_node(vector_size);
         let shared: Arc<rcu_gp::RcuGPShared<Node>> = Arc::new(rcu_gp::RcuGPShared::new(
-            (N_THREADS + 1).try_into().unwrap(),
+            (N_WRITER+ N_READERS).try_into().unwrap(),
             node,
         ));
 
         let mgn = Arc::new(BenchmarkInfo::new());
 
         let mut handles = vec![];
-        for id in [0,1,2,3,4,5] {
+        for id in 0..N_READERS {
             let wc = rcu_gp::RcuCell::new(shared.clone());
             let m = mgn.clone();
             let handle: thread::JoinHandle<()> = thread::spawn(move || {
@@ -114,7 +114,7 @@ pub fn benchmark_gp() {
             handles.push(handle);
         }
 
-        {
+        for _id in 0..N_WRITER {
             let m = mgn.clone();
             let wc = rcu_gp::RcuCell::new(shared.clone());
             let handle = thread::spawn(move || {

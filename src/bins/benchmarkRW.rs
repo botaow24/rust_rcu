@@ -8,7 +8,9 @@ use std::time::Instant;
 //mod rcu_base;
 //use rand::distributions::Uniform;
 
-static N_THREADS: u32 = 8;
+
+static N_READERS: u32 = 6;
+static N_WRITER:u32=1;
 
 struct Node {
     payload: Vec<u32>,
@@ -22,7 +24,6 @@ struct BenchmarkInfo {
     read_count: AtomicI64,
     write_count: AtomicI64,
 
-    dammy: AtomicI64,
     flag: AtomicU32,
 }
 
@@ -31,15 +32,12 @@ impl BenchmarkInfo {
         return BenchmarkInfo {
             read_count: AtomicI64::new(0),
             write_count: AtomicI64::new(0),
-            dammy: AtomicI64::new(0),
             flag: AtomicU32::new(0),
         };
     }
 }
 
 fn gen_node(size: i32) -> Node {
-    static mut GID: i32 = 0;
-    let mut rng = rand::thread_rng();
     let vals: Vec<u32> = (0..size).map(|_| 0).collect();
     let n = Node { payload: vals };
     return n;
@@ -107,7 +105,7 @@ pub fn benchmark_gp() {
         let mgn = Arc::new(BenchmarkInfo::new());
 
         let mut handles = vec![];
-        for id in [0,1,2,3,4,5] {
+        for id in 0..N_READERS{
             let w = shared.clone();
             let m = mgn.clone();
             let handle: thread::JoinHandle<()> = thread::spawn(move || {
@@ -116,6 +114,7 @@ pub fn benchmark_gp() {
             handles.push(handle);
         }
 
+        for _id in 0..N_WRITER
         {
             let m = mgn.clone();
             let w = shared.clone();
