@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 use std::ops::Deref;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicU32, Ordering, AtomicPtr};
+use std::sync::atomic::{AtomicU32, Ordering, AtomicPtr, fence};
 use std::sync::Arc;
 
 use std::sync::Mutex;
@@ -15,8 +15,8 @@ pub struct RcuQsbr<T> {
     global_info: Arc<RcuQsbrShared<T>>,
 }
 
-pub fn barrier() {}
-pub fn smp_mb() {}
+pub fn barrier() { fence(Ordering::SeqCst); }
+pub fn smp_mb() { fence(Ordering::SeqCst); }
 
 pub struct RcuQsbrShared<T> {
     thread_counter: AtomicU32,
@@ -151,16 +151,29 @@ impl<T> RcuQsbr<T> {
             let mut v = ctr.load(Ordering::SeqCst);
             let global_ctr = self.global_info.global_ctr.load(Ordering::Relaxed);
             while v!=0 && v != global_ctr {
+                println!("{} {} {}",v,global_ctr,id);
                 std::thread::yield_now();
                 v = ctr.load(Ordering::SeqCst);
             }
             cnt += 1;
         }
+        /*let total_id = self.global_info.thread_counter.load(Ordering::SeqCst);
+        for i in 0..total_id {
+            let mut v = self.global_info.thread_ctr[i as usize].load(Ordering::SeqCst);
+            let global_ctr = self.global_info.global_ctr.load(Ordering::Relaxed);
+            while v!=0 && v != global_ctr {
+                println!("{} {} {}",v,global_ctr,i);
+                std::thread::yield_now();
+                v = self.global_info.thread_ctr[i as usize].load(Ordering::SeqCst);
+            }
+            cnt += 1;
+        }*/
     }
 
     fn quiescent_state(&self) {
         smp_mb();
         let id = self.thread_id;
+        println!("quiescent_state {}",id);
         let v = self.global_info.global_ctr.load(Ordering::Acquire);
         self.global_info.thread_ctr[id].store(v, Ordering::Release);
         smp_mb();
