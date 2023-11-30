@@ -103,9 +103,7 @@ fn thread_creator(_world: rcu_gp::RcuCell<Node>) {
     loop {
         if _world.read().reject.load(Ordering::Acquire) != 0 {
             let new_node = gen_node();
-            let mut lock = _world.replace(new_node);
-            let old = lock.get_old();
-
+            _world.replace(new_node);
         } else if _world.read().accept.load(Ordering::Acquire) == N_THREADS {
             break;
         }

@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use rand::Rng;
 
 use rcu::rcu_gp;
 
@@ -45,6 +44,7 @@ fn gen_node(size: i32) -> Node {
 }
 
 fn thread_reader(world: rcu_gp::RcuCell<Node>, info: Arc<BenchmarkInfo>, id: u32) {
+
     //println!("checker Start id #{}", id);
     let mut hit: i64 = 0;
     let mut iteration_count = 0;

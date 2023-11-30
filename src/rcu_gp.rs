@@ -59,6 +59,11 @@ pub struct RcuGpWriteGuard<'a, T: 'a> {
     is_unlocked: bool,
 }
 
+pub enum CasResult<'a, T: 'a> 
+{
+    Guard(RcuGpWriteGuard<'a,T>),
+    Old(T),
+}
 impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
     pub fn new(lock: &'a RcuCell<T>, new_data: T) -> Self {
         let mut mtx = lock.global_info.data.lock().unwrap();
@@ -73,6 +78,31 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
             data: Some(old),
             is_unlocked: false,
         };
+    }
+
+    pub fn CAS(lock: &'a RcuCell<T>, new_data: T, rg: RcuGpReadGuard<T>) -> CasResult<'a,T> {
+        let mut mtx = lock.global_info.data.lock().unwrap();
+        let bx: Box<UnsafeCell<T>> = Box::new(new_data.into());
+        let r = lock.global_info.data_ptr.compare_exchange(
+            rg.cas_ptr,
+            bx.get(),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+        if r.ok().unwrap() == rg.cas_ptr {
+            let old = std::mem::replace(&mut *mtx, bx);
+            lock.global_info
+                .data_ptr
+                .store(mtx.as_mut().get(), Ordering::Release);
+            let t = RcuGpWriteGuard {
+                inner_lock: lock,
+                data: Some(old),
+                is_unlocked: false,
+            };
+            return CasResult::Guard(t);
+        } else {
+            return CasResult::Old(bx.into_inner());
+        }
     }
 
     pub fn get_old(&mut self) -> T {
@@ -93,15 +123,17 @@ impl<'a, T> Drop for RcuGpWriteGuard<'a, T> {
 pub struct RcuGpReadGuard<'a, T: 'a> {
     data: NonNull<T>,
     inner_lock: &'a RcuCell<T>,
+
+    cas_ptr: *mut T,
 }
 
 impl<'a, T: 'a> RcuGpReadGuard<'a, T> {
     pub fn new(lock: &'a RcuCell<T>) -> Self {
+        let ptr = lock.global_info.data_ptr.load(Ordering::Acquire);
         return RcuGpReadGuard {
-            data: unsafe {
-                NonNull::new_unchecked(lock.global_info.data_ptr.load(Ordering::Acquire))
-            },
+            data: unsafe { NonNull::new_unchecked(ptr) },
             inner_lock: lock,
+            cas_ptr: ptr,
         };
     }
 }
@@ -148,6 +180,14 @@ impl<T> RcuCell<T> {
         return RcuGpReadGuard::new(self);
     }
 
+    pub fn compare_replace(
+        &self,
+        new_data: T,
+        rg: RcuGpReadGuard<T>,
+    ) -> CasResult<'_, T> {
+        return RcuGpWriteGuard::CAS(self, new_data, rg);
+    }
+
     pub fn replace(&self, new_data: T) -> RcuGpWriteGuard<'_, T> {
         return RcuGpWriteGuard::new(self, new_data);
     }
@@ -156,14 +196,10 @@ impl<T> RcuCell<T> {
         //println!("read");
         let id = self.thread_id;
         let temp_local = self.global_info.thread_ctr[id].load(Ordering::Acquire);
-    
+
         if (temp_local & RCU_NEST_MASK) == 0 {
             let global = self.global_info.global_ctr.load(Ordering::Acquire);
-            self.global_info.thread_ctr[id].store(
-                global + RCU_NEST_COUNT,
-                Ordering::SeqCst,
-            );
-            
+            self.global_info.thread_ctr[id].store(global + RCU_NEST_COUNT, Ordering::SeqCst);
 
             smp_mb();
         } else {
@@ -200,13 +236,10 @@ impl<T> RcuCell<T> {
             .store(new_value, Ordering::Release);
         barrier();
         let mut count = 0;
-        let mut debug = 0;
         for ctr in &self.global_info.thread_ctr {
             if count % CACHE_RATE == 0 {
                 while is_busy(ctr, new_value) {
-                    debug = ctr.load(Ordering::Relaxed);
                     std::thread::yield_now();
-                    
                 }
             }
             count += 1;
