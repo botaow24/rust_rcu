@@ -110,7 +110,7 @@ impl<T> RcuQsbrShared<T> {
 
 
 impl<T> RcuQsbr<T> {
-    pub(crate) fn new(shared: Arc<RcuQsbrShared<T>>) -> Self {
+    pub fn new(shared: Arc<RcuQsbrShared<T>>) -> Self {
         let tc = shared.thread_counter.fetch_add(1, Ordering::SeqCst);
         return RcuQsbr { thread_id: tc as usize, global_info: shared };
     }
@@ -166,12 +166,12 @@ impl<T> RcuQsbr<T> {
         smp_mb();
     }
 
-    pub(crate) fn read(&self) -> RcuQsbrReadGuard<'_, T> {
+    pub fn read(&self) -> RcuQsbrReadGuard<'_, T> {
         self.read_lock();
         return RcuQsbrReadGuard::new(self);
     }
 
-    pub(crate) fn replace(&self, new_data: T) -> RcuQsbrWriteGuard<'_, T> {
+    pub fn replace(&self, new_data: T) -> RcuQsbrWriteGuard<'_, T> {
         return RcuQsbrWriteGuard::new(self, new_data);
     }
 

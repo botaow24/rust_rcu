@@ -56,10 +56,6 @@ unsafe impl<T> Send for RcuGPShared<T> {}
 unsafe impl<T> Sync for RcuGPShared<T> {}
 
 pub struct RcuGpWriteGuard<'a, T: 'a> {
-    // NB: we use a pointer instead of `&'a T` to avoid `noalias` violations, because a
-    // `Ref` argument doesn't hold immutability for its whole scope, only until it drops.
-    // `NonNull` is also covariant over `T`, just like we would have with `&T`. `NonNull`
-    // is preferable over `const* T` to allow for niche optimization.
     inner_lock: &'a RcuCell<T>,
     data: Option<Box<UnsafeCell<T>>>   ,
     is_unlocked:bool,
@@ -68,7 +64,7 @@ pub struct RcuGpWriteGuard<'a, T: 'a> {
 impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
     pub fn new(lock: &'a RcuCell<T>, new_data: T) -> Self {
         let mut mtx = lock.global_info.data.lock().unwrap();
-        let mut bx: Box<UnsafeCell<T>> = Box::new(new_data.into());
+        let bx: Box<UnsafeCell<T>> = Box::new(new_data.into());
         let old = std::mem::replace(&mut *mtx, bx);
         lock.global_info
             .data_ptr
@@ -81,11 +77,11 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
         };
     }
 
-    pub fn get_old(&mut self) ->Box<UnsafeCell<T>>
+    pub fn get_old(&mut self) ->T
     {
         self.inner_lock.synchronize_rcu();
         self.is_unlocked = true;
-        return  std::mem::take(&mut self.data).unwrap();
+        return std::mem::take(&mut self.data).unwrap().into_inner();
     }
 }
 
@@ -99,10 +95,6 @@ impl<'a, T> Drop for RcuGpWriteGuard<'a, T> {
 }
 
 pub struct RcuGpReadGuard<'a, T: 'a> {
-    // NB: we use a pointer instead of `&'a T` to avoid `noalias` violations, because a
-    // `Ref` argument doesn't hold immutability for its whole scope, only until it drops.
-    // `NonNull` is also covariant over `T`, just like we would have with `&T`. `NonNull`
-    // is preferable over `const* T` to allow for niche optimization.
     data: NonNull<T>,
     inner_lock: &'a RcuCell<T>,
 }
