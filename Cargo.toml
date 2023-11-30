@@ -11,6 +11,10 @@ path = "src/main.rs"
 name = "benchmark"
 path = "src/bins/benchmark.rs"
 
+[[bin]]
+name = "benchmarkRW"
+path = "src/bins/benchmarkRW.rs"
+
 [lib]
 name = "rcu"
 path = "src/lib.rs"

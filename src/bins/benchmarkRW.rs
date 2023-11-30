@@ -1,12 +1,9 @@
 use std::thread;
 
 use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
-use rand::Rng;
-
-use rcu::rcu_gp;
 
 //mod rcu_base;
 //use rand::distributions::Uniform;
@@ -15,6 +12,10 @@ static N_THREADS: u32 = 8;
 
 struct Node {
     payload: Vec<u32>,
+}
+
+struct Locked{
+    data:Node,
 }
 
 struct BenchmarkInfo {
@@ -44,7 +45,7 @@ fn gen_node(size: i32) -> Node {
     return n;
 }
 
-fn thread_reader(world: rcu_gp::RcuCell<Node>, info: Arc<BenchmarkInfo>, id: u32) {
+fn thread_reader(_world: Arc<RwLock<Locked>>, info: Arc<BenchmarkInfo>, id: u32) {
     //println!("checker Start id #{}", id);
     let mut hit: i64 = 0;
     let mut iteration_count = 0;
@@ -54,8 +55,8 @@ fn thread_reader(world: rcu_gp::RcuCell<Node>, info: Arc<BenchmarkInfo>, id: u32
             std::thread::yield_now();
         } else if mode == 1 {
             iteration_count += 1;
-            let guard = world.read();
-            for value in &guard.payload {
+            let guard = _world.read().unwrap();
+            for value in &guard.data.payload {
                 if id == *value {
                     hit += 1;
                 }
@@ -72,7 +73,7 @@ fn thread_reader(world: rcu_gp::RcuCell<Node>, info: Arc<BenchmarkInfo>, id: u32
     }
 }
 
-fn thread_writer(_world: rcu_gp::RcuCell<Node>, info: Arc<BenchmarkInfo>, vect_size:i32) {
+fn thread_writer(_world: Arc<RwLock<Locked>>, info: Arc<BenchmarkInfo>, vect_size:i32) {
 
     let mut iteration_count = 0;
     loop {
@@ -81,7 +82,7 @@ fn thread_writer(_world: rcu_gp::RcuCell<Node>, info: Arc<BenchmarkInfo>, vect_s
             std::thread::yield_now();
         } else if mode == 1 {
             let new_node = gen_node(vect_size);
-            _world.replace(new_node);
+            _world.write().unwrap().data = new_node;
             iteration_count += 1;
         } else{
             break;
@@ -92,7 +93,7 @@ fn thread_writer(_world: rcu_gp::RcuCell<Node>, info: Arc<BenchmarkInfo>, vect_s
 }
 
 pub fn benchmark_gp() {
-    println!("benchmark GP");
+    println!("benchmark RWLock");
     let mut vector_size = 8;
     while {
         vector_size *= 2;
@@ -100,28 +101,26 @@ pub fn benchmark_gp() {
     } {
         let now = Instant::now();
         let node: Node = gen_node(vector_size);
-        let shared: Arc<rcu_gp::RcuGPShared<Node>> = Arc::new(rcu_gp::RcuGPShared::new(
-            (N_THREADS + 1).try_into().unwrap(),
-            node,
-        ));
+        
+        let shared= Arc::new(RwLock::new(Locked{data:node}));
 
         let mgn = Arc::new(BenchmarkInfo::new());
 
         let mut handles = vec![];
         for id in [0,1,2,3,4,5,6] {
-            let wc = rcu_gp::RcuCell::new(shared.clone());
+            let w = shared.clone();
             let m = mgn.clone();
             let handle: thread::JoinHandle<()> = thread::spawn(move || {
-                thread_reader(wc, m,id);
+                thread_reader(w, m,id);
             });
             handles.push(handle);
         }
 
         {
             let m = mgn.clone();
-            let wc = rcu_gp::RcuCell::new(shared.clone());
+            let w = shared.clone();
             let handle = thread::spawn(move || {
-                thread_writer(wc,m,vector_size);
+                thread_writer( w,m,vector_size);
             });
             handles.push(handle);
         }
