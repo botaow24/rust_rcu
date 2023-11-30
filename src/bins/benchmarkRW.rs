@@ -107,7 +107,7 @@ pub fn benchmark_gp() {
         let mgn = Arc::new(BenchmarkInfo::new());
 
         let mut handles = vec![];
-        for id in [0,1,2,3,4,5,6] {
+        for id in [0,1,2,3,4,5] {
             let w = shared.clone();
             let m = mgn.clone();
             let handle: thread::JoinHandle<()> = thread::spawn(move || {
