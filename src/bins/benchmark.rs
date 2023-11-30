@@ -19,8 +19,6 @@ struct Node {
 struct BenchmarkInfo {
     read_count: AtomicI64,
     write_count: AtomicI64,
-
-    dammy: AtomicI64,
     flag: AtomicU32,
 }
 
@@ -29,15 +27,14 @@ impl BenchmarkInfo {
         return BenchmarkInfo {
             read_count: AtomicI64::new(0),
             write_count: AtomicI64::new(0),
-            dammy: AtomicI64::new(0),
             flag: AtomicU32::new(0),
         };
     }
 }
 
 fn gen_node(size: i32) -> Node {
-    static mut GID: i32 = 0;
-    let mut rng = rand::thread_rng();
+    //static mut GID: i32 = 0;
+    //let mut rng = rand::thread_rng();
     let vals: Vec<u32> = (0..size).map(|_| 0).collect();
     let n = Node { payload: vals };
     return n;

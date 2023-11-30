@@ -105,10 +105,16 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
         }
     }
 
-    pub fn get_old(&mut self) -> T {
-        self.inner_lock.synchronize_rcu();
-        self.is_unlocked = true;
-        return std::mem::take(&mut self.data).unwrap().into_inner();
+    pub fn get_old(&mut self) -> Option<T> {
+        if self.data.is_some(){
+            self.inner_lock.synchronize_rcu();
+            self.is_unlocked = true;
+            return Some(std::mem::take(&mut self.data).unwrap().into_inner());
+        }
+        else {
+            return None;
+        }
+
     }
 }
 
