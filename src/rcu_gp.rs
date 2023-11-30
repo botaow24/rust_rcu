@@ -196,7 +196,7 @@ impl<T> RcuCell<T> {
         barrier();
         for ctr in &self.global_info.thread_ctr {
             while is_busy(ctr, new_value) {
-                std::thread::yield_now();
+                //std::thread::yield_now();
             }
         }
     }

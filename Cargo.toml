@@ -7,6 +7,10 @@ edition = "2021"
 name = "rcu_excu"
 path = "src/main.rs"
 
+[[bin]]
+name = "benchmark"
+path = "src/bins/benchmark.rs"
+
 [lib]
 name = "rcu"
 path = "src/lib.rs"

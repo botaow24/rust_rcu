@@ -1,6 +1,5 @@
 
 mod example;
-mod benchmark;
 
 
 fn main() {
