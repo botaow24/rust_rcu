@@ -1,11 +1,10 @@
 use std::cell::UnsafeCell;
 use std::ops::Deref;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicU32, Ordering, AtomicPtr};
+use std::sync::atomic::{AtomicU32, Ordering, AtomicPtr, fence};
 use std::sync::Arc;
 
 use std::sync::Mutex;
-use std::thread::sleep;
 
 const RCU_GP_ONLINE: u32 = 0x1;
 const RCU_GP_CTR: u32 = 0x2;
@@ -15,8 +14,8 @@ pub struct RcuQsbr<T> {
     global_info: Arc<RcuQsbrShared<T>>,
 }
 
-pub fn barrier() {}
-pub fn smp_mb() {}
+pub fn barrier() { fence(Ordering::SeqCst); }
+pub fn smp_mb() { fence(Ordering::SeqCst); }
 
 pub struct RcuQsbrShared<T> {
     thread_counter: AtomicU32,
@@ -54,7 +53,6 @@ impl<T> Deref for RcuQsbrReadGuard<'_, T> {
 
 impl <'a, T: 'a> Drop for RcuQsbrReadGuard<'a, T> {
     fn drop(&mut self) {
-        //println!("drop read guard at thread {}",self.inner_lock.thread_id);
         self.inner_lock.read_unlock();
         self.inner_lock.quiescent_state();
     }
@@ -92,13 +90,13 @@ impl<'a, T: 'a> RcuQsbrWriteGuard<'a, T> {
 impl<T> RcuQsbrShared<T> {
     pub fn new(count: i32, data: T) -> Self {
         let mut my_vec = Vec::new();
-        for r in 0..count {
+        for _r in 0..count {
             my_vec.push(AtomicU32::new(RCU_GP_CTR));
         }
         let mut bx : Box<UnsafeCell<T>> = Box::new(data.into());
         return RcuQsbrShared {
             thread_counter: AtomicU32::new(0),
-            global_ctr: AtomicU32::new(0),
+            global_ctr: AtomicU32::new(2),
             thread_ctr: my_vec,
             mtx: Mutex::new(0),
             data_ptr: AtomicPtr:: new(bx.as_mut().get_mut()) ,
@@ -112,7 +110,12 @@ impl<T> RcuQsbrShared<T> {
 impl<T> RcuQsbr<T> {
     pub fn new(shared: Arc<RcuQsbrShared<T>>) -> Self {
         let tc = shared.thread_counter.fetch_add(1, Ordering::SeqCst);
-        return RcuQsbr { thread_id: tc as usize, global_info: shared };
+        let tmp = RcuQsbr {
+            thread_id: tc as usize,
+            global_info: shared,
+        };
+        tmp.thread_online();
+        return tmp;
     }
 
     fn read_lock(&self) {
@@ -140,8 +143,6 @@ impl<T> RcuQsbr<T> {
     }
 
     pub fn update_counter_and_wait(&self) {
-        //println!("update_counter_and_wait");
-        let id = self.thread_id;
         self.global_info.global_ctr.fetch_add(RCU_GP_CTR, Ordering::SeqCst);
         barrier();
         self.quiescent_state();
@@ -161,8 +162,8 @@ impl<T> RcuQsbr<T> {
     fn quiescent_state(&self) {
         smp_mb();
         let id = self.thread_id;
-        let v = self.global_info.global_ctr.load(Ordering::Acquire);
-        self.global_info.thread_ctr[id].store(v, Ordering::Release);
+        let v = self.global_info.global_ctr.load(Ordering::SeqCst);
+        self.global_info.thread_ctr[id].store(v, Ordering::SeqCst);
         smp_mb();
     }
 
@@ -175,4 +176,17 @@ impl<T> RcuQsbr<T> {
         return RcuQsbrWriteGuard::new(self, new_data);
     }
 
+    pub fn thread_online(&self) {
+        self.global_info.thread_ctr[self.thread_id].store(RCU_GP_ONLINE, Ordering::SeqCst);
+    }
+
+    pub fn thread_offline(&self) {
+        self.global_info.thread_ctr[self.thread_id].store(0, Ordering::SeqCst);
+    }
+}
+
+impl<T> Drop for RcuQsbr<T> {
+    fn drop(&mut self) {
+        self.thread_offline();
+    }
 }
