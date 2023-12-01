@@ -10,7 +10,7 @@ use std::time::Instant;
 
 
 static N_READERS: u32 = 6;
-static N_WRITER:u32=1;
+static N_WRITER:u32=2;
 
 struct Node {
     payload: Vec<u32>,
@@ -91,7 +91,7 @@ fn thread_writer(_world: Arc<RwLock<Locked>>, info: Arc<BenchmarkInfo>, vect_siz
 }
 
 pub fn benchmark_gp() {
-    println!("benchmark RWLock");
+    println!("benchmark RWLock {} {}",N_READERS,N_WRITER);
     let mut vector_size = 8;
     while {
         vector_size *= 2;

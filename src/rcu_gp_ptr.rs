@@ -14,7 +14,7 @@ pub struct RcuGPShared<T> {
     thread_ctr: Vec<AtomicU32>,
 
     data_ptr: AtomicPtr<T>,
-    data: Mutex<Box<UnsafeCell<T>>>,
+    data: Mutex<u32>,
 }
 
 fn barrier() {
@@ -36,13 +36,13 @@ impl<T> RcuGPShared<T> {
         for _r in 0..count * CACHE_RATE {
             my_vec.push(AtomicU32::new(0));
         }
-        let mut bx: Box<UnsafeCell<T>> = Box::new(data.into());
+        let mut bx: Box<T> = Box::new(data);
         return RcuGPShared {
             thread_counter: AtomicU32::new(0),
             global_ctr: AtomicU32::new(0),
             thread_ctr: my_vec,
-            data_ptr: AtomicPtr::new(bx.as_mut().get_mut()),
-            data: Mutex::new(bx),
+            data_ptr: AtomicPtr::new(Box::<T>::into_raw(bx)),
+            data: Mutex::new(1),
         };
     }
 }
@@ -52,7 +52,7 @@ unsafe impl<T> Sync for RcuGPShared<T> {}
 
 pub struct RcuGpWriteGuard<'a, T: 'a> {
     inner_lock: &'a RcuCell<T>,
-    data: Option<Box<UnsafeCell<T>>>,
+    data: Option<Box<T>>,
     is_unlocked: bool,
 }
 
@@ -63,50 +63,30 @@ pub enum CasResult<'a, T: 'a>
 }
 impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
     pub fn new(lock: &'a RcuCell<T>, new_data: T) -> Self {
-        let mut mtx = lock.global_info.data.lock().unwrap();
-        let bx: Box<UnsafeCell<T>> = Box::new(new_data.into());
-        let old = std::mem::replace(&mut *mtx, bx);
-        lock.global_info
-            .data_ptr
-            .store(mtx.as_mut().get(), Ordering::Release);
+        //let mut mtx = lock.global_info.data.lock().unwrap();
+        let bx: Box<T> = Box::new(new_data);
+        let ptr = Box::<T>::into_raw(bx);
+
+        let old = lock.global_info.data_ptr.swap(ptr,Ordering::AcqRel);
 
         return RcuGpWriteGuard {
             inner_lock: lock,
-            data: Some(old),
+            data: Some(unsafe { Box::from_raw(old) }),
             is_unlocked: false,
         };
     }
 
     pub fn CAS(lock: &'a RcuCell<T>, new_data: T, rg: RcuGpReadGuard<T>) -> CasResult<'a,T> {
-        let mut mtx = lock.global_info.data.lock().unwrap();
-        let bx: Box<UnsafeCell<T>> = Box::new(new_data.into());
-        let r = lock.global_info.data_ptr.compare_exchange(
-            rg.cas_ptr,
-            bx.get(),
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-        if r.ok().unwrap() == rg.cas_ptr {
-            let old = std::mem::replace(&mut *mtx, bx);
-            lock.global_info
-                .data_ptr
-                .store(mtx.as_mut().get(), Ordering::Release);
-            let t = RcuGpWriteGuard {
-                inner_lock: lock,
-                data: Some(old),
-                is_unlocked: false,
-            };
-            return CasResult::Guard(t);
-        } else {
-            return CasResult::Old(bx.into_inner());
-        }
+
+            return CasResult::Old(new_data);
+        
     }
 
     pub fn get_old(&mut self) -> Option<T> {
         if self.data.is_some(){
             self.inner_lock.synchronize_rcu();
             self.is_unlocked = true;
-            return Some(std::mem::take(&mut self.data).unwrap().into_inner());
+            return Some(*std::mem::take(&mut self.data).unwrap());
         }
         else {
             return None;
@@ -192,6 +172,7 @@ impl<T> RcuCell<T> {
     }
 
     pub fn replace(&self, new_data: T) -> RcuGpWriteGuard<'_, T> {
+        //println!("ptr");
         return RcuGpWriteGuard::new(self, new_data);
     }
 
