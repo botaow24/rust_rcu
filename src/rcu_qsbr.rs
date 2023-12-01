@@ -112,7 +112,12 @@ impl<T> RcuQsbrShared<T> {
 impl<T> RcuQsbr<T> {
     pub fn new(shared: Arc<RcuQsbrShared<T>>) -> Self {
         let tc = shared.thread_counter.fetch_add(1, Ordering::SeqCst);
-        return RcuQsbr { thread_id: tc as usize, global_info: shared };
+        let tmp = RcuQsbr {
+            thread_id: tc as usize,
+            global_info: shared,
+        };
+        tmp.thread_online();
+        return tmp;
     }
 
     fn read_lock(&self) {
@@ -151,29 +156,18 @@ impl<T> RcuQsbr<T> {
             let mut v = ctr.load(Ordering::SeqCst);
             let global_ctr = self.global_info.global_ctr.load(Ordering::Relaxed);
             while v!=0 && v != global_ctr {
-                println!("{} {} {}",v,global_ctr,id);
+                //println!("{} {} {}",v,global_ctr,id);
                 std::thread::yield_now();
                 v = ctr.load(Ordering::SeqCst);
             }
             cnt += 1;
         }
-        /*let total_id = self.global_info.thread_counter.load(Ordering::SeqCst);
-        for i in 0..total_id {
-            let mut v = self.global_info.thread_ctr[i as usize].load(Ordering::SeqCst);
-            let global_ctr = self.global_info.global_ctr.load(Ordering::Relaxed);
-            while v!=0 && v != global_ctr {
-                println!("{} {} {}",v,global_ctr,i);
-                std::thread::yield_now();
-                v = self.global_info.thread_ctr[i as usize].load(Ordering::SeqCst);
-            }
-            cnt += 1;
-        }*/
     }
 
     fn quiescent_state(&self) {
         smp_mb();
         let id = self.thread_id;
-        println!("quiescent_state {}",id);
+        //println!("quiescent_state {}",id);
         let v = self.global_info.global_ctr.load(Ordering::Acquire);
         self.global_info.thread_ctr[id].store(v, Ordering::Release);
         smp_mb();
@@ -188,4 +182,17 @@ impl<T> RcuQsbr<T> {
         return RcuQsbrWriteGuard::new(self, new_data);
     }
 
+    pub fn thread_online(&self) {
+        self.global_info.thread_ctr[self.thread_id].store(RCU_GP_ONLINE, Ordering::SeqCst);
+    }
+
+    pub fn thread_offline(&self) {
+        self.global_info.thread_ctr[self.thread_id].store(0, Ordering::SeqCst);
+    }
+}
+
+impl<T> Drop for RcuQsbr<T> {
+    fn drop(&mut self) {
+        self.thread_offline();
+    }
 }
