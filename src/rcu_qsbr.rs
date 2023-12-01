@@ -76,10 +76,11 @@ impl<'a, T: 'a> RcuQsbrReadGuard<'a, T> {
 impl<'a, T: 'a> RcuQsbrWriteGuard<'a, T> {
     pub fn new(lock: &'a RcuQsbr<T>, mut new_data: T) -> Self {
 
-        lock.global_info.data_ptr.store(& mut new_data, Ordering::SeqCst);
+      
         let mut mtx = lock.global_info.data.lock().unwrap();
         let mut bx : Box<UnsafeCell<T>> = Box::new(new_data.into());
         let old = std::mem::replace(&mut *mtx,bx);
+        lock.global_info.data_ptr.store( mtx.as_mut().get(), Ordering::SeqCst);
         return RcuQsbrWriteGuard {
             inner_lock: lock,
             data: old

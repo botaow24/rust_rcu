@@ -16,6 +16,10 @@ name = "benchmark_list"
 path = "src/bins/benchmark_list.rs"
 
 [[bin]]
+name = "benchmark_list_rw"
+path = "src/bins/benchmark_list_rw.rs"
+
+[[bin]]
 name = "benchmarkRW"
 path = "src/bins/benchmarkRW.rs"
 

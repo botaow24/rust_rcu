@@ -16,6 +16,11 @@ struct Node {
     payload: Vec<u32>,
 }
 
+struct World
+{
+     data:LinkedList<Node>,
+}
+
 struct Locked{
     data:Node,
 }
@@ -43,7 +48,7 @@ fn gen_node(size: i32) -> Node {
     return n;
 }
 
-fn thread_reader(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, id: u32) {
+fn thread_reader(_world: Arc<RwLock<World>>, info: Arc<BenchmarkInfo>, id: u32) {
 
     //println!("checker Start id #{}", id);
     let mut hit: i64 = 0;
@@ -54,15 +59,14 @@ fn thread_reader(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, id: 
             std::thread::yield_now();
         } else if mode == 1 {
             iteration_count += 1;
-            let mut guard = _world.read();
-            while guard.get_data().is_some()
+            let mut guard = _world.read().unwrap();
+            for re in  guard.data.iter()
             {
-                for value in &guard.get_data().unwrap().payload {
+                for value in &re.payload {
                     if id == *value {
                         hit += 1;
                     }
-                }
-                guard.go_next();
+                } 
             }
 
         } else {
@@ -77,10 +81,10 @@ fn thread_reader(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, id: 
     }
 }
 
-fn thread_writer(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, vect_size:i32, id :u32) {
+fn thread_writer(_world: Arc<RwLock<World>>, info: Arc<BenchmarkInfo>, vect_size:i32, id :u32) {
 
     let u1:u32 = 3;
-    let mut hit:i64 = 0;
+    let mut hit: i64 = 0;
 
     let mut iteration_count = 0;
     loop {
@@ -89,27 +93,26 @@ fn thread_writer(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, vect
             std::thread::yield_now();
         } else if mode == 1 {
             
-            let mut guard = _world.write();
             let mut idx:u32 = 0;
-            while guard.get_data().is_some()
-            {
+
+            let mut guard = _world.write().unwrap();
+
+            for element in guard.data.iter_mut() {
                 
                 if idx %2 == 1{
                     let new_node = gen_node(vect_size);
-                    guard.replace(new_node);
-
+                    let _ = std::mem::replace(element, new_node);
                 }
                 else {
-                    for value in &guard.get_data().unwrap().payload {
+                    for value in &element.payload {
                         if id == *value {
                             hit += 1;
                         }
                     } 
                 }
-
-                guard.go_next();
                 idx += 1;
             }
+
 
 
             //let new_node = gen_node(vect_size);
@@ -120,15 +123,16 @@ fn thread_writer(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, vect
         }
     }
     info.write_count.fetch_add(iteration_count, Ordering::Relaxed);
+    //println!("Writer Exit");
+
     if hit % 9999999999 == 23
     {
         println!(" {}", hit);
     }
-    //println!("Writer Exit");
 }
 
 pub fn benchmark_gp() {
-    println!("benchmark RCU_list");
+    println!("benchmark rw_list {} {}",N_READERS,N_WRITER);
     let mut vector_size = 8;
     while {
         vector_size *= 2;
@@ -154,16 +158,16 @@ pub fn benchmark_gp() {
         lst.push_back(gen_node(vector_size));
         lst.push_back(gen_node(vector_size));
 
-        let mut rcu = rcu::rcu_list::RcuList::gen_list(N_WRITER+ N_READERS, lst);
+        let world = Arc::new(RwLock::new(World{data:lst}));
 
         let mgn = Arc::new(BenchmarkInfo::new());
 
         let mut handles = vec![];
         for id in 0..N_READERS{
-            let w = rcu.pop();
+            let w = world.clone();
             let m = mgn.clone();
             let handle: thread::JoinHandle<()> = thread::spawn(move || {
-                thread_reader(w.unwrap(), m,id);
+                thread_reader(w, m,id);
             });
             handles.push(handle);
         }
@@ -171,9 +175,9 @@ pub fn benchmark_gp() {
         for id in 0..N_WRITER
         {
             let m = mgn.clone();
-            let w = rcu.pop();
+            let w = world.clone();
             let handle = thread::spawn(move || {
-                thread_writer( w.unwrap(),m,vector_size,id);
+                thread_writer( w,m,vector_size,id);
             });
             handles.push(handle);
         }
