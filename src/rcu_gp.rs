@@ -13,8 +13,6 @@ pub struct RcuGPShared<T> {
 
     thread_ctr: Vec<AtomicU32>,
 
-    mtx: Mutex<i32>,
-
     data_ptr: AtomicPtr<T>,
     data: Mutex<Box<UnsafeCell<T>>>,
 }
@@ -35,7 +33,7 @@ const CACHE_RATE: u32 = 1;
 impl<T> RcuGPShared<T> {
     pub fn new(count: u32, data: T) -> Self {
         let mut my_vec = Vec::new();
-        for r in 0..count * CACHE_RATE {
+        for _r in 0..count * CACHE_RATE {
             my_vec.push(AtomicU32::new(0));
         }
         let mut bx: Box<UnsafeCell<T>> = Box::new(data.into());
@@ -43,7 +41,6 @@ impl<T> RcuGPShared<T> {
             thread_counter: AtomicU32::new(0),
             global_ctr: AtomicU32::new(0),
             thread_ctr: my_vec,
-            mtx: Mutex::new(0),
             data_ptr: AtomicPtr::new(bx.as_mut().get_mut()),
             data: Mutex::new(bx),
         };
@@ -226,7 +223,7 @@ impl<T> RcuCell<T> {
         //println!("synchronize_rcu");
         smp_mb();
         {
-            let _lg = self.global_info.mtx.lock().unwrap();
+            let _lg = self.global_info.data.lock().unwrap();
             self.update_counter_and_wait();
             barrier();
             self.update_counter_and_wait();
