@@ -41,7 +41,6 @@ const CACHE_RATE: u32 = 1;
 
 impl<T> RcuGPShared<T> {
     pub fn new(count: u32, mut data: LinkedList<T>) -> Self {
-        
         let mut my_vec = Vec::new();
         for _r in 0..count * CACHE_RATE {
             my_vec.push(AtomicU32::new(0));
@@ -73,9 +72,7 @@ impl<T> RcuGPShared<T> {
                     .store(head_ptr, Ordering::Relaxed)
             };
         }
-
         while data.is_empty() == false {
-            
             let bk = data.pop_front();
             let node = Box::new(LinkedNode {
                 data: bk.unwrap().into(),
@@ -100,7 +97,6 @@ impl<T> RcuGPShared<T> {
             };
             prev_ptr = new_ptr;
         }
-
         return RcuGPShared {
             thread_counter: AtomicU32::new(0),
             global_ctr: AtomicU32::new(0),
@@ -213,9 +209,10 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
     }
     pub fn replace(&mut self, new_data: T) {
         if (self.reader.is_some()) {
-            println!("11 ");
+            
             let old = self.reader.as_ref().unwrap().cas_ptr;
             if (old.is_null() == false) {
+                
                 let next = self.reader.as_ref().unwrap().get_next_ptr();
                 let prev = self.reader.as_ref().unwrap().get_prev_ptr();
                 let node = Box::new(LinkedNode {
@@ -224,16 +221,19 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
                     prev: AtomicPtr::new(prev),
                     head: false,
                 });
+                
                 let new_ptr = Box::<LinkedNode<T>>::into_raw(node);
                 unsafe {
                     next.as_mut()
                         .unwrap()
                         .prev
-                        .store(new_ptr, Ordering::Relaxed)
+                        .store(new_ptr, Ordering::Release)
                 };
-                unsafe { prev.as_mut().unwrap().next.store(new_ptr, Ordering::Relaxed) };
+                unsafe { prev.as_mut().unwrap().next.store(new_ptr, Ordering::Release) };
                 let bx: Box<LinkedNode<T>> = unsafe { Box::from_raw(old) };
                 self.temp.push(bx);
+                self.reader.as_mut().unwrap().cas_ptr = new_ptr;
+    
             }
         }
     }
@@ -247,6 +247,7 @@ pub enum CasResult<'a, T: 'a> {
 impl<'a, T> Drop for RcuGpWriteGuard<'a, T> {
     fn drop(&mut self) {
         {
+            //println!("{}",self.temp.len());
             self.reader = None;
             //
         }
@@ -273,6 +274,7 @@ impl<T> RcuList<T> {
         let mut c: u32 = 0;
         while c < num {
             r.push(Self::new(shared.clone()));
+            c += 1;
         }
         return r;
     }

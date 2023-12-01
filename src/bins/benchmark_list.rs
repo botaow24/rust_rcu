@@ -10,7 +10,7 @@ use rcu::rcu_list;
 
 
 static N_READERS: u32 = 6;
-static N_WRITER:u32=0;
+static N_WRITER:u32=1;
 
 struct Node {
     payload: Vec<u32>,
@@ -44,6 +44,7 @@ fn gen_node(size: i32) -> Node {
 }
 
 fn thread_reader(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, id: u32) {
+
     //println!("checker Start id #{}", id);
     let mut hit: i64 = 0;
     let mut iteration_count = 0;
@@ -79,7 +80,6 @@ fn thread_reader(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, id: 
 fn thread_writer(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, vect_size:i32, id :u32) {
 
     let u1:u32 = 3;
-    let u2 = (id + 1)*2;
     
 
     let mut iteration_count = 0;
@@ -93,8 +93,8 @@ fn thread_writer(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, vect
             let mut idx:u32 = 0;
             while guard.get_data().is_some()
             {
-                println!("123 {} {} {}",idx,u1,u2);
-                if idx == u1 || idx == u2{
+                
+                if idx == u1{
                     let new_node = gen_node(vect_size);
                     guard.replace(new_node);
 
@@ -135,11 +135,11 @@ pub fn benchmark_gp() {
         lst.push_back(gen_node(vector_size));
         lst.push_back(gen_node(vector_size));
         lst.push_back(gen_node(vector_size));
-            
+
         let mut rcu = rcu::rcu_list::RcuList::gen_list(N_WRITER+ N_READERS, lst);
 
         let mgn = Arc::new(BenchmarkInfo::new());
-        println!("Size={} Stopping", vector_size);
+
         let mut handles = vec![];
         for id in 0..N_READERS{
             let w = rcu.pop();
@@ -149,7 +149,7 @@ pub fn benchmark_gp() {
             });
             handles.push(handle);
         }
-        println!("Size={} Stopping", vector_size);
+
         for id in 0..N_WRITER
         {
             let m = mgn.clone();
@@ -161,7 +161,7 @@ pub fn benchmark_gp() {
         }
         mgn.flag.store(1, Ordering::SeqCst);
        std::thread::sleep(std::time::Duration::from_secs(10));
-       println!("Size={} Stopping", vector_size);
+       //println!("Size={} Stopping", vector_size);
         mgn.flag.store(2, Ordering::SeqCst);
         for handle in handles {
             handle.join().unwrap();

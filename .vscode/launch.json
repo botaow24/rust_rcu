@@ -19,7 +19,7 @@
             "name": "(OSX) Launch",
             "type": "lldb",
             "request": "launch",
-            "program": "${workspaceRoot}/target/debug/hello_world",
+            "program": "${workspaceRoot}/target/debug/benchmark_list",
             "args": [],
             "cwd": "${workspaceRoot}",
         }

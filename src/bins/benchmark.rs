@@ -11,7 +11,7 @@ use rcu::rcu_gp;
 //use rand::distributions::Uniform;
 
 static N_READERS: u32 = 6;
-static N_WRITER:u32=1;
+static N_WRITER:u32=2;
 struct Node {
     payload: Vec<u32>,
 }
@@ -89,7 +89,7 @@ fn thread_writer(_world: rcu_gp::RcuCell<Node>, info: Arc<BenchmarkInfo>, vect_s
 }
 
 pub fn benchmark_gp() {
-    println!("benchmark GP");
+    println!("benchmark GP {} {}",N_READERS,N_WRITER);
     let mut vector_size = 8;
     while {
         vector_size *= 2;
