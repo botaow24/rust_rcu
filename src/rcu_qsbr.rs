@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicU32, Ordering, AtomicPtr, fence};
 use std::sync::Arc;
 
 use std::sync::Mutex;
-use std::thread::sleep;
 
 const RCU_GP_ONLINE: u32 = 0x1;
 const RCU_GP_CTR: u32 = 0x2;
@@ -54,7 +53,6 @@ impl<T> Deref for RcuQsbrReadGuard<'_, T> {
 
 impl <'a, T: 'a> Drop for RcuQsbrReadGuard<'a, T> {
     fn drop(&mut self) {
-        //println!("drop read guard at thread {}",self.inner_lock.thread_id);
         self.inner_lock.read_unlock();
         self.inner_lock.quiescent_state();
     }
@@ -92,13 +90,13 @@ impl<'a, T: 'a> RcuQsbrWriteGuard<'a, T> {
 impl<T> RcuQsbrShared<T> {
     pub fn new(count: i32, data: T) -> Self {
         let mut my_vec = Vec::new();
-        for r in 0..count {
+        for _r in 0..count {
             my_vec.push(AtomicU32::new(RCU_GP_CTR));
         }
         let mut bx : Box<UnsafeCell<T>> = Box::new(data.into());
         return RcuQsbrShared {
             thread_counter: AtomicU32::new(0),
-            global_ctr: AtomicU32::new(0),
+            global_ctr: AtomicU32::new(2),
             thread_ctr: my_vec,
             mtx: Mutex::new(0),
             data_ptr: AtomicPtr:: new(bx.as_mut().get_mut()) ,
@@ -145,8 +143,6 @@ impl<T> RcuQsbr<T> {
     }
 
     pub fn update_counter_and_wait(&self) {
-        //println!("update_counter_and_wait");
-        let id = self.thread_id;
         self.global_info.global_ctr.fetch_add(RCU_GP_CTR, Ordering::SeqCst);
         barrier();
         self.quiescent_state();
@@ -156,7 +152,6 @@ impl<T> RcuQsbr<T> {
             let mut v = ctr.load(Ordering::SeqCst);
             let global_ctr = self.global_info.global_ctr.load(Ordering::Relaxed);
             while v!=0 && v != global_ctr {
-                //println!("{} {} {}",v,global_ctr,id);
                 std::thread::yield_now();
                 v = ctr.load(Ordering::SeqCst);
             }
@@ -167,9 +162,8 @@ impl<T> RcuQsbr<T> {
     fn quiescent_state(&self) {
         smp_mb();
         let id = self.thread_id;
-        //println!("quiescent_state {}",id);
-        let v = self.global_info.global_ctr.load(Ordering::Acquire);
-        self.global_info.thread_ctr[id].store(v, Ordering::Release);
+        let v = self.global_info.global_ctr.load(Ordering::SeqCst);
+        self.global_info.thread_ctr[id].store(v, Ordering::SeqCst);
         smp_mb();
     }
 

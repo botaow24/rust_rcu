@@ -28,16 +28,12 @@ impl BenchmarkInfo {
 }
 
 fn gen_node(size: i32) -> Node {
-    //static mut GID: i32 = 0;
-    //let mut rng = rand::thread_rng();
     let vals: Vec<u32> = (0..size).map(|_| 0).collect();
     let n = Node { payload: vals };
     return n;
 }
 
 fn thread_reader(world: rcu_qsbr::RcuQsbr<Node>, info: Arc<BenchmarkInfo>, id: u32) {
-
-    //println!("checker Start id #{}", id);
     let mut hit: i64 = 0;
     let mut iteration_count = 0;
     loop {
@@ -46,12 +42,14 @@ fn thread_reader(world: rcu_qsbr::RcuQsbr<Node>, info: Arc<BenchmarkInfo>, id: u
             std::thread::yield_now();
         } else if mode == 1 {
             iteration_count += 1;
+
             let guard = world.read();
             for value in &guard.payload {
                 if id == *value {
                     hit += 1;
                 }
             }
+
         } else {
             break;
         }
@@ -80,7 +78,6 @@ fn thread_writer(_world: rcu_qsbr::RcuQsbr<Node>, info: Arc<BenchmarkInfo>, vect
         }
     }
     info.write_count.fetch_add(iteration_count, Ordering::Relaxed);
-    //println!("Writer Exit");
 }
 
 
@@ -129,7 +126,6 @@ pub fn benchmark_qsbr() {
         let rc = mgn.read_count.load(Ordering::Relaxed);
         let wc: i64 = mgn.write_count.load(Ordering::Relaxed);
         println!("Size={} Elapsed: {:.2?} read_count {} write_count {}", vector_size,elapsed,rc,wc);
-        //println!("Exit ");
     }
 }
 
