@@ -10,7 +10,7 @@ use std::time::Instant;
 
 
 static N_READERS: u32 = 6;
-static N_WRITER:u32=6;
+static N_WRITER:u32=0;
 
 struct Node {
     payload: Vec<u32>,

@@ -11,7 +11,7 @@ use rcu::rcu_gp_ptr as rcu_gp;
 //use rand::distributions::Uniform;
 
 static N_READERS: u32 = 6;
-static N_WRITER:u32=6;
+static N_WRITER:u32=1;
 struct Node {
     payload: Vec<u32>,
 }
