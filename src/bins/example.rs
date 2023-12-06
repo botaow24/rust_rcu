@@ -90,7 +90,7 @@ fn thread_creator(_world: rcu_gp::RcuCell<Node>, tid:i32) {
             let r = _world.atomic_replace(new_node,read_lock);
             match r {
                 rcu_gp::CasResult::Guard(_) => println!("tid{} publish id {}",tid,new_id),
-                rcu_gp::CasResult::Old(_) =>  println!("tid{} Failed to update Block {}, another thread has upadted it.",tid,new_id),
+                rcu_gp::CasResult::Old(_) =>  println!("tid{} Failed to update Block {}, another thread has updated the old block.",tid,new_id),
             }
         } else if read_lock.accept.load(Ordering::Acquire) == N_THREADS {
             break;
