@@ -11,13 +11,13 @@ use std::time::Instant;
 
 use rand::Rng;
 
-use rcu::rcu_gp;
+use rcu::rcu_gp_ptr as rcu_gp;
 
 //mod rcu_base;
 //use rand::distributions::Uniform;
 
 static N_READERS: u32 = 8;
-static N_WRITER:u32=1; // gen_node is not thread safe for this example so the writer number must be 1
+static N_WRITER:u32 = 2; 
 static N_THREADS: u32 = N_READERS;
 
 struct Node {
@@ -29,12 +29,12 @@ struct Node {
 }
 
 fn gen_node() -> Node {
-    static mut GID: i32 = 0;
+    static mut GID: AtomicI32 = AtomicI32::new(1);
     let mut rng = rand::thread_rng();
     let vals: Vec<u32> = (0..512).map(|_| rng.gen_range(1..512)).collect();
-    unsafe { GID += 1 };
+    let old = unsafe { GID.fetch_add(1, Ordering::Relaxed) };
     let n = Node {
-        id: AtomicI32::new(unsafe { GID }),
+        id: AtomicI32::new(old),
         accept: AtomicU32::new(0),
         reject: AtomicU32::new(0),
         payload: vals,
@@ -61,7 +61,7 @@ fn thread_checker(world: rcu_gp::RcuCell<Node>, id: u32) {
 
             for value in &guard.payload {
                 if id == *value {
-                    println!("thread {} reject Node{} @ {}", id, now_id, idx);
+                    //println!("thread {} reject Node{} @ {}", id, now_id, idx);
                     valid = false;
                     break;
                 }
@@ -69,7 +69,7 @@ fn thread_checker(world: rcu_gp::RcuCell<Node>, id: u32) {
             }
 
             if valid {
-                println!("thread {} accept Node{}", id, now_id);
+                //println!("thread {} accept Node{}", id, now_id);
                 guard.accept.fetch_add(1, Ordering::AcqRel);
             } else {
                 guard.reject.fetch_add(1, Ordering::AcqRel);
@@ -80,19 +80,23 @@ fn thread_checker(world: rcu_gp::RcuCell<Node>, id: u32) {
 }
 
 
-fn thread_creator(_world: rcu_gp::RcuCell<Node>) {
-    println!("Writer Start");
+fn thread_creator(_world: rcu_gp::RcuCell<Node>, tid:i32) {
+    println!("Writer Start {}",tid);
     loop {
-        if _world.read().reject.load(Ordering::Acquire) != 0 {
+        let read_lock = _world.read();
+        if read_lock.reject.load(Ordering::Acquire) != 0 {
             let new_node = gen_node();
-            
-            println!("Creating Node {}", new_node.id.load(Ordering::Relaxed));
-            _world.replace(new_node);
-        } else if _world.read().accept.load(Ordering::Acquire) == N_THREADS {
+            let new_id = new_node.id.load(Ordering::Relaxed);
+            let r = _world.atomic_replace(new_node,read_lock);
+            match r {
+                rcu_gp::CasResult::Guard(_) => println!("tid{} publish id {}",tid,new_id),
+                rcu_gp::CasResult::Old(_) =>  println!("tid{} Failed to update Block {}, another thread has upadted it.",tid,new_id),
+            }
+        } else if read_lock.accept.load(Ordering::Acquire) == N_THREADS {
             break;
         }
     }
-    println!("Writer Exit");
+    println!("Writer Exit {}",tid);
 }
 
 pub fn test_gp() {
@@ -111,17 +115,17 @@ pub fn test_gp() {
         handles.push(handle);
     }
 
-    for _id in 0..N_WRITER
+    for id in 0..N_WRITER
     {
         let wc = tokens.pop().unwrap();
         let handle = thread::spawn(move || {
-            thread_creator(wc);
+            thread_creator(wc,id.try_into().unwrap());
         });
         handles.push(handle);
     }
     
     for handle in handles {
-        handle.join().unwrap();
+        let _ = handle.join().unwrap();
     }
     
     let elapsed = now.elapsed();

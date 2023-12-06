@@ -66,7 +66,7 @@ pub struct RcuGpWriteGuard<'a, T: 'a> {
 pub enum CasResult<'a, T: 'a> 
 {
     Guard(RcuGpWriteGuard<'a,T>),
-    Old(T,RcuGpReadGuard<'a,T>),
+    Old(T),
 }
 impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
     // for normal reader
@@ -85,16 +85,22 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
     }
     // for atomic reader
     pub fn cas(lock: &'a RcuCell<T>, new_data: T, rg: RcuGpReadGuard<'a,T>) -> CasResult<'a,T> {
+        let old_ptr = rg.cas_ptr;
+        {
+            let _ = rg;
+        }
         let mut mtx = lock.global_info.data.lock().unwrap();
         let bx: Box<UnsafeCell<T>> = Box::new(new_data.into());
         let r = lock.global_info.data_ptr.compare_exchange(
-            rg.cas_ptr,
+            old_ptr,
             bx.get(),
             Ordering::SeqCst,
             Ordering::SeqCst,
         );
-        if r.ok().unwrap() == rg.cas_ptr {
-            let old = std::mem::replace(&mut *mtx, bx);
+
+        match r{
+            Ok(_) =>{    
+                let old = std::mem::replace(&mut *mtx, bx);
             lock.global_info
                 .data_ptr
                 .store(mtx.as_mut().get(), Ordering::Release);
@@ -102,9 +108,12 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
                 inner_lock: lock,
                 data: Some(old),
             };
-            return CasResult::Guard(t);
-        } else {
-            return CasResult::Old(bx.into_inner(),rg);
+            return CasResult::Guard(t);      
+            },
+
+            Err(_) => {  
+                return CasResult::Old(bx.into_inner());         
+              }
         }
     }
     // Get the old protected data
@@ -214,7 +223,6 @@ impl<'a,T> RcuCell<T> {
     pub fn replace(&self, new_data: T) -> RcuGpWriteGuard<'_, T> {
         return RcuGpWriteGuard::new(self, new_data);
     }
-
     
     fn read_lock(&self) {
         //println!("read");

@@ -49,7 +49,7 @@ The Difference between the 'rcu_gp.rs' and 'rcu_gp_ptr.rs' is that in 'rcu_gp_pt
 ## Run Example codes 
 Please runs 'src/bins/benchmark.rs' with ```cargo run -r --bin benchmark```. You will see the benchmark result of one size in 10 sceonds.
 
-Please runs 'src/bins/example.rs' with ```cargo run -r --bin example```. This is a dynamic example that will print something when access the shared data. The example only allows 1 writer becuase of the ```gen_node```.
+Please runs 'src/bins/example.rs' with ```cargo run -r --bin example```. This is a dynamic example that will print something when access the shared data. It also shows how to do update in an atomic way.
 
 ## Use our code in your library 
 We implemented several algorithms of RCU. To begin with, We recommend you try the 'rcu_gp_ptr.rs' first. 

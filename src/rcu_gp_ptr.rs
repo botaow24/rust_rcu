@@ -90,27 +90,33 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
     }
 // for atomic writer
     pub fn cas(lock: &'a RcuCell<T>, new_data: T, rg: RcuGpReadGuard<'a,T>) -> CasResult<'a,T> {
+
+        let old_ptr = rg.cas_ptr;
+        {
+            let _ = rg;
+        }
+
         let bx: Box<T> = Box::new(new_data);
         let ptr = Box::<T>::into_raw(bx);
         let r = lock.global_info.data_ptr.compare_exchange(
-            rg.cas_ptr,
+            old_ptr,
             ptr,
             Ordering::SeqCst,
             Ordering::SeqCst,
         );
-        if r.ok().unwrap() == rg.cas_ptr 
-        {
-            let t = RcuGpWriteGuard {
+        match r{
+            Ok(_) =>{            let t = RcuGpWriteGuard {
                 inner_lock: lock,
-                data: Some(unsafe { Box::from_raw(rg.cas_ptr) }),
+                data: Some(unsafe { Box::from_raw(old_ptr) }),
                 is_unlocked: false,
             };
-            return CasResult::Guard(t);
-        } else {
-           
-            let mut b= Some(unsafe { Box::from_raw(ptr) });
-            return CasResult::Old( *std::mem::take(&mut b).unwrap());
+            return CasResult::Guard(t);},
+
+            Err(_) => {           
+                let mut b= Some(unsafe { Box::from_raw(ptr) });
+                return CasResult::Old( *std::mem::take(&mut b).unwrap());}
         }
+        
     }
     // Get the old protected data
     // this will result in a synchronize_rcu()
@@ -183,7 +189,7 @@ fn is_busy(ctr: &AtomicU32, global_ctr: u32) -> bool {
     return ((value & RCU_NEST_MASK) != 0) && (((value ^ global_ctr) & RCU_GP_CTR_PHASE) != 0);
 }
 
-impl<T> RcuCell<T> {
+impl<'a,T> RcuCell<T> {
     // user can not use this one
     fn new(shared: Arc<RcuGPShared<T>>) -> Self {
         let tc = shared.thread_counter.fetch_add(1, Ordering::SeqCst) * CACHE_RATE;
@@ -219,7 +225,11 @@ impl<T> RcuCell<T> {
         //println!("ptr");
         return RcuGpWriteGuard::new(self, new_data);
     }
-
+    
+    pub fn atomic_replace (& 'a self, new_data: T, rg: RcuGpReadGuard<'a,T>) -> CasResult<'a,T>
+    {
+        return RcuGpWriteGuard::cas(self, new_data, rg);
+    }
     fn read_lock(&self) {
         //println!("read");
         let id = self.thread_id;
