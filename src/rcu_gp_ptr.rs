@@ -18,6 +18,12 @@ struct RcuGPShared<T> {
     data: Mutex<u32>,
 }
 
+impl<T> Drop for RcuGPShared< T> {
+    fn drop(&mut self) {
+       let _ = unsafe { Box::from_raw(self.data_ptr.load(Ordering::Acquire)) };
+    }
+}
+
 // Functions for providing memory barrier
 fn barrier() {
     fence(Ordering::SeqCst);
