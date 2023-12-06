@@ -15,7 +15,7 @@ struct RcuGPShared<T> {
     thread_ctr: Vec<AtomicU32>,
 
     data_ptr: AtomicPtr<T>, // For reader and the shared ownership
-    data: Mutex<u32>,
+    mtx: Mutex<()>,
 }
 
 impl<T> Drop for RcuGPShared< T> {
@@ -52,7 +52,7 @@ impl<T> RcuGPShared<T> {
             global_ctr: AtomicU32::new(0),
             thread_ctr: my_vec,
             data_ptr: AtomicPtr::new(Box::<T>::into_raw(bx)),
-            data: Mutex::new(1),
+            mtx: Mutex::new(()),
         };
     }
 }
@@ -248,7 +248,7 @@ impl<T> RcuCell<T> {
         //println!("synchronize_rcu");
         smp_mb();
         {
-            let _lg = self.global_info.data.lock().unwrap();
+            let _lg = self.global_info.mtx.lock().unwrap();
             self.update_counter_and_wait();
             barrier();
             self.update_counter_and_wait();
