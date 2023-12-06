@@ -23,7 +23,7 @@ The below figures show the reading lock performance. The data was collected on A
 The below figures show the Write lock performance. 
 ![Writing Peroformace](figures/Writing.png)
 
-In Summary, our library is at least one order of magnitude faster than RWlock in terms of reading Lock speed. The reading performance won't drop when having more writers. 
+In Summary, our library is at least one order of magnitude faster than RWlock in terms of reading Lock. The reading performance won't drop when having more writers. 
 ## How it works 
 
 If you look inside the 'rcu_gp.rs' you will find a shared data struct likes the following one:
