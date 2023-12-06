@@ -42,7 +42,7 @@ In the above code, ```data``` manages the shared ownership and will only be acce
 The Difference between the 'rcu_gp.rs' and 'rcu_gp_ptr.rs' is that in 'rcu_gp_ptr.rs', the ownership is managed by the ```data_ptr``` (Like RCU in C/C++). 
 
 ## Run Example codes 
-Please runs 'src/bins/benchmark.rs' with 'cargo run -r --bin benchmark'. You will see the benchmark result of one size in 10 sceonds.
+Please runs 'src/bins/benchmark.rs' with ```cargo run -r --bin benchmark```. You will see the benchmark result of one size in 10 sceonds.
 
 ## Use our code in your library 
 We implemented several algorithms of RCU. To begin with, We recommend you try the 'rcu_gp_ptr.rs' first. 
@@ -64,7 +64,7 @@ let guard = rcu_cell.read();
 // reads from guard
 }
 ```
-The above code creates a read guard of the protected data. The guard implements 'deref' and can be used to access the protected data. During the lifetime of this guard, the protected data won't be changed or dropped. 
+The above code creates a read guard of the protected data. The guard implements ```deref``` and can be used to access the protected data. During the lifetime of this guard, the protected data won't be changed or dropped. 
 ### Updating the Shared Object
 ```rust
 fn thread_writer(rcu_cell: rcu_gp::RcuCell<Node>)
@@ -73,7 +73,7 @@ fn thread_writer(rcu_cell: rcu_gp::RcuCell<Node>)
     let guard = rcu_cell.replace(new_node);
 }
 ```
-The above code shows how to modify the protected data. In RCU, you will need to create a new object and replace the old one. After the replacement, you will have a write guard. The writeGuard will delete the old data when it drops. You can also use 'get_old' to get the old protected data. Both the drop and 'get_old' will result in a 'rcu_synchonization'
+The above code shows how to modify the protected data. In RCU, you will need to create a new object and replace the old one. After the replacement, you will have a write guard. The writeGuard will delete the old data when it ```drop``` You can also use ```get_old``` to get the old protected data. Both the drop and ```get_old``` will result in a ```rcu_synchonization```
 ## Limitation
 
 Our implementation requires the user to provide the number of threads in the system when creating the 'RcuCell'. However, C/C++ implementation usually allows dynamically adding and removing threads. However, this feature requires a RCU_list which we haven't finshed. 
