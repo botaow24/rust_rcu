@@ -2,7 +2,7 @@ use std::collections::LinkedList;
 use std::thread;
 
 use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Instant;
 
 use rcu::rcu_list;
@@ -14,10 +14,6 @@ static N_WRITER:u32=1;
 
 struct Node {
     payload: Vec<u32>,
-}
-
-struct Locked{
-    data:Node,
 }
 
 struct BenchmarkInfo {
@@ -79,7 +75,7 @@ fn thread_reader(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, id: 
 
 fn thread_writer(_world: rcu_list::RcuList<Node>, info: Arc<BenchmarkInfo>, vect_size:i32, id :u32) {
 
-    let u1:u32 = 3;
+    //let u1:u32 = 3;
     let mut hit:i64 = 0;
 
     let mut iteration_count = 0;

@@ -17,7 +17,7 @@ The following table highlights the top differences between RCU_cell and RwLock.
 ## Performance:
 You can find the benchmark code in 'src/bins/benchmark.rs' and 'src/bins/benchmarkRW.rs'. 
 
-The below figures show the reading lock performance. The data was collected on Apple M2Max. In the figure, '6 + 0'  stands for six reader threads and zero writers. 
+The below figures show the reading lock performance. The data was collected on Apple M2Max. In the figure, '6 + 2'  stands for six reader threads and two writers. 
 ![Reading Peroformace](figures/Reading.png)
 
 The below figures show the Write lock performance. 
@@ -37,7 +37,7 @@ pub struct RcuGPShared<T> {
     data: Mutex<Box<UnsafeCell<T>>>, // For Writers, the actual shared data (shared ownership)
 }
 ```
-In the above code, ```data``` manages the shared ownership and will only be accessed by writers. ```data_ptr``` is a fast reading cache that all readers will go to. The **RCU** algorithm will be responsible for ensuring that the data that ```data_ptr``` points to won't be edited or dropped when any reader is using the shared data. 
+In the above code, ```data: Mutex<Box<UnsafeCell<T>>>``` manages the shared ownership and will only be accessed by writers. ```data_ptr: AtomicPtr<T>``` is a fast reading cache that all readers will go to. The **RCU** algorithm will be responsible for ensuring that the data that ```data_ptr``` points to won't be edited or dropped when any reader is using the shared data. 
 
 The Difference between the 'rcu_gp.rs' and 'rcu_gp_ptr.rs' is that in 'rcu_gp_ptr.rs', the ownership is managed by the ```data_ptr``` (Like RCU in C/C++). 
 

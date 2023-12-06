@@ -21,9 +21,6 @@ struct World
      data:LinkedList<Node>,
 }
 
-struct Locked{
-    data:Node,
-}
 
 struct BenchmarkInfo {
     read_count: AtomicI64,
@@ -59,7 +56,7 @@ fn thread_reader(_world: Arc<RwLock<World>>, info: Arc<BenchmarkInfo>, id: u32) 
             std::thread::yield_now();
         } else if mode == 1 {
             iteration_count += 1;
-            let mut guard = _world.read().unwrap();
+            let guard = _world.read().unwrap();
             for re in  guard.data.iter()
             {
                 for value in &re.payload {
@@ -83,7 +80,7 @@ fn thread_reader(_world: Arc<RwLock<World>>, info: Arc<BenchmarkInfo>, id: u32) 
 
 fn thread_writer(_world: Arc<RwLock<World>>, info: Arc<BenchmarkInfo>, vect_size:i32, id :u32) {
 
-    let u1:u32 = 3;
+    //let u1:u32 = 3;
     let mut hit: i64 = 0;
 
     let mut iteration_count = 0;
