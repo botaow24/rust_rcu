@@ -13,7 +13,7 @@ The following table highlights the top differences between RCU_cell and RwLock.
 |Writer starvation|No|No|No|
 |Partial update|<code style="color : Darkorange">Yes</code>|No|No|
 |Easy to use |Yes|Yes|No|
-
+|Safe in user-space |Yes|Yes|Yes|
 ## Performance:
 You can find the benchmark code in 'src/bins/benchmark.rs' and 'src/bins/benchmarkRW.rs'. 
 
@@ -23,7 +23,7 @@ The below figures show the reading lock performance. The data was collected on A
 The below figures show the Write lock performance. 
 ![Writing Peroformace](figures/Writing.png)
 
-In Summary, our library is at least one order of magnitude faster than RWlock in terms of reading Lock. The reading performance won't drop when having more writers. 
+In Summary, our library is at least one order of magnitude faster than RWlock in terms of reading Lock. The performance of aquiring reading lock won't drop when having more writers. 
 ## How it works 
 
 If you look inside the 'rcu_gp.rs' you will find a shared data struct likes the following one:
@@ -34,7 +34,7 @@ pub struct RcuGPShared<T> {
     thread_ctr: Vec<AtomicU32>,
 
     data_ptr: AtomicPtr<T>,     // For Readers
-    data: Mutex<Box<UnsafeCell<T>>>, // For Writers
+    data: Mutex<Box<UnsafeCell<T>>>, // For Writers, the actual shared data (shared ownership)
 }
 ```
 In the above code, ```data``` manages the shared ownership and will only be accessed by writers. ```data_ptr``` is a fast reading cache that all readers will go to. The **RCU** algorithm will be responsible for ensuring that the data that ```data_ptr``` points to won't be edited or dropped when any reader is using the shared data. 
@@ -55,7 +55,7 @@ use rcu::rcu_gp_ptr as rcu_gp;
 ```rust
  let mut tokens = rcu_gp::RcuCell::gen_tokens(num_of_tokens, protected_data);
 ```
-The Above code creates multiple RCUCells for the protected data. Each threads will need a instnace of RCUCell to acesss or update the protected data
+The Above code creates multiple RCUCells for the protected data. Each threads will need a instnace of RCUCell to acesss or update the protected data. So if you will have 5 threads, please generate 5 tokens. 
 ### Reading the Shared Object
 ```rust
 fn thread_reader(rcu_cell: rcu_gp::RcuCell<Node>)
