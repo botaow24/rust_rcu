@@ -6,17 +6,19 @@ use std::sync::Arc;
 
 use std::sync::Mutex;
 
-pub struct RcuGPShared<T> {
-    thread_counter: AtomicU32,
-
+/*
+The data structure for the protected data and shared RCU infomation
+ */
+struct RcuGPShared<T> {
+    thread_counter: AtomicU32,  // RCU information
     global_ctr: AtomicU32,
-
     thread_ctr: Vec<AtomicU32>,
 
-    data_ptr: AtomicPtr<T>,
+    data_ptr: AtomicPtr<T>,     // For reader
     data: Mutex<Box<UnsafeCell<T>>>,
 }
 
+// Functions for providing memory barrier
 fn barrier() {
     fence(Ordering::SeqCst);
 }
@@ -24,11 +26,14 @@ fn smp_mb() {
     fence(Ordering::SeqCst)
 }
 
+// Parameter
 const RCU_NEST_MASK: u32 = 0x0ffff;
 const RCU_GP_CTR_PHASE: u32 = 0x10000;
 const RCU_NEST_COUNT: u32 = 0x1;
 
+//Set to 16 to prevent false sharing and improve proformence
 const CACHE_RATE: u32 = 1;
+
 
 impl<T> RcuGPShared<T> {
     pub fn new(count: u32, data: T) -> Self {
@@ -50,18 +55,21 @@ impl<T> RcuGPShared<T> {
 unsafe impl<T> Send for RcuGPShared<T> {}
 unsafe impl<T> Sync for RcuGPShared<T> {}
 
+/*
+The read Guard
+ */
 pub struct RcuGpWriteGuard<'a, T: 'a> {
     inner_lock: &'a RcuCell<T>,
     data: Option<Box<UnsafeCell<T>>>,
-    is_unlocked: bool,
 }
 
 pub enum CasResult<'a, T: 'a> 
 {
     Guard(RcuGpWriteGuard<'a,T>),
-    Old(T),
+    Old(T,RcuGpReadGuard<'a,T>),
 }
 impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
+    // for normal reader
     pub fn new(lock: &'a RcuCell<T>, new_data: T) -> Self {
         let mut mtx = lock.global_info.data.lock().unwrap();
         let bx: Box<UnsafeCell<T>> = Box::new(new_data.into());
@@ -73,11 +81,10 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
         return RcuGpWriteGuard {
             inner_lock: lock,
             data: Some(old),
-            is_unlocked: false,
         };
     }
-
-    pub fn CAS(lock: &'a RcuCell<T>, new_data: T, rg: RcuGpReadGuard<T>) -> CasResult<'a,T> {
+    // for atomic reader
+    pub fn cas(lock: &'a RcuCell<T>, new_data: T, rg: RcuGpReadGuard<'a,T>) -> CasResult<'a,T> {
         let mut mtx = lock.global_info.data.lock().unwrap();
         let bx: Box<UnsafeCell<T>> = Box::new(new_data.into());
         let r = lock.global_info.data_ptr.compare_exchange(
@@ -94,18 +101,17 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
             let t = RcuGpWriteGuard {
                 inner_lock: lock,
                 data: Some(old),
-                is_unlocked: false,
             };
             return CasResult::Guard(t);
         } else {
-            return CasResult::Old(bx.into_inner());
+            return CasResult::Old(bx.into_inner(),rg);
         }
     }
-
+    // Get the old protected data
+    // this will result in a synchronize_rcu()
     pub fn get_old(&mut self) -> Option<T> {
         if self.data.is_some(){
             self.inner_lock.synchronize_rcu();
-            self.is_unlocked = true;
             return Some(std::mem::take(&mut self.data).unwrap().into_inner());
         }
         else {
@@ -114,15 +120,16 @@ impl<'a, T: 'a> RcuGpWriteGuard<'a, T> {
 
     }
 }
-
+    // delete the old data if the get_old is not called
 impl<'a, T> Drop for RcuGpWriteGuard<'a, T> {
     fn drop(&mut self) {
-        if self.is_unlocked == false {
+        if self.data.is_some(){
             self.inner_lock.synchronize_rcu();
         }
     }
 }
 
+// reader guard 
 pub struct RcuGpReadGuard<'a, T: 'a> {
     data: NonNull<T>,
     inner_lock: &'a RcuCell<T>,
@@ -131,6 +138,7 @@ pub struct RcuGpReadGuard<'a, T: 'a> {
 }
 
 impl<'a, T: 'a> RcuGpReadGuard<'a, T> {
+    // lock the lock and create an read guard 
     pub fn new(lock: &'a RcuCell<T>) -> Self {
         let ptr = lock.global_info.data_ptr.load(Ordering::Acquire);
         return RcuGpReadGuard {
@@ -141,6 +149,7 @@ impl<'a, T: 'a> RcuGpReadGuard<'a, T> {
     }
 }
 
+// provides smart pointer feature
 impl<T> Deref for RcuGpReadGuard<'_, T> {
     type Target = T;
 
@@ -150,16 +159,18 @@ impl<T> Deref for RcuGpReadGuard<'_, T> {
     }
 }
 
+// unlock when finished the reading
 impl<'a, T> Drop for RcuGpReadGuard<'a, T> {
     fn drop(&mut self) {
         self.inner_lock.read_unlock();
     }
 }
 
+// The tokens for acessing the proteced data
 pub struct RcuCell<T> {
     thread_id: usize,
 
-    global_info: Arc<RcuGPShared<T>>,
+    global_info: Arc<RcuGPShared<T>>, // shared 
 }
 
 fn is_busy(ctr: &AtomicU32, global_ctr: u32) -> bool {
@@ -167,8 +178,15 @@ fn is_busy(ctr: &AtomicU32, global_ctr: u32) -> bool {
     return ((value & RCU_NEST_MASK) != 0) && (((value ^ global_ctr) & RCU_GP_CTR_PHASE) != 0);
 }
 
-impl<T> RcuCell<T> {
-    pub fn new(shared: Arc<RcuGPShared<T>>) -> Self {
+
+pub fn gen_tokens<T>(num: u32, data: T) -> Vec<RcuCell<T>> {
+    return  RcuCell::gen_tokens(num, data);
+}
+
+
+impl<'a,T> RcuCell<T> {
+    // user can not use this one
+    fn new(shared: Arc<RcuGPShared<T>>) -> Self {
         let tc = shared.thread_counter.fetch_add(1, Ordering::SeqCst) * CACHE_RATE;
 
         return RcuCell {
@@ -176,25 +194,32 @@ impl<T> RcuCell<T> {
             global_info: shared,
         };
     }
+    // generate 'num' of RcuCell for the protected data
+    pub fn gen_tokens(num: u32, data: T) -> Vec<Self> {
+        let shared = Arc::new(RcuGPShared::new(num, data));
 
+        let mut r = Vec::new();
+        let mut c: u32 = 0;
+        while c < num {
+            r.push(Self::new(shared.clone()));
+            c += 1;
+        }
+        return r;
+    }
+
+    // create a read guard
     pub fn read(&self) -> RcuGpReadGuard<'_, T> {
         self.read_lock();
 
         return RcuGpReadGuard::new(self);
     }
 
-    pub fn compare_replace(
-        &self,
-        new_data: T,
-        rg: RcuGpReadGuard<T>,
-    ) -> CasResult<'_, T> {
-        return RcuGpWriteGuard::CAS(self, new_data, rg);
-    }
-
+    // provides a write guard
     pub fn replace(&self, new_data: T) -> RcuGpWriteGuard<'_, T> {
         return RcuGpWriteGuard::new(self, new_data);
     }
 
+    
     fn read_lock(&self) {
         //println!("read");
         let id = self.thread_id;

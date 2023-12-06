@@ -97,16 +97,14 @@ pub fn benchmark_gp() {
     } {
         let now = Instant::now();
         let node: Node = gen_node(vector_size);
-        let shared: Arc<rcu_gp::RcuGPShared<Node>> = Arc::new(rcu_gp::RcuGPShared::new(
-            (N_WRITER+ N_READERS).try_into().unwrap(),
-            node,
-        ));
+        let mut tokens = rcu_gp::RcuCell::gen_tokens(N_READERS+N_WRITER,node);
 
         let mgn = Arc::new(BenchmarkInfo::new());
 
         let mut handles = vec![];
         for id in 0..N_READERS {
-            let wc = rcu_gp::RcuCell::new(shared.clone());
+            let wc = tokens.pop().unwrap();
+           
             let m = mgn.clone();
             let handle: thread::JoinHandle<()> = thread::spawn(move || {
                 thread_reader(wc, m,id);
@@ -116,7 +114,7 @@ pub fn benchmark_gp() {
 
         for _id in 0..N_WRITER {
             let m = mgn.clone();
-            let wc = rcu_gp::RcuCell::new(shared.clone());
+            let wc = tokens.pop().unwrap();
             let handle = thread::spawn(move || {
                 thread_writer(wc,m,vector_size);
             });
