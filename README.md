@@ -14,6 +14,11 @@ The following table highlights the top differences between RCU_cell and RwLock.
 |Partial update|<code style="color : Darkorange">Yes</code>|No|No|
 |Easy to use |Yes|Yes|No|
 |Safe in user-space |Yes|Yes|Yes|
+
+The RCU algorthims we use in this libarary is from the following paper:
+
+Desnoyers, Mathieu et al. “Supplementary Material for User-Level Implementations of Read-Copy Update.” (2011).
+
 ## Performance:
 You can find the benchmark code in 'src/bins/benchmark.rs' and 'src/bins/benchmarkRW.rs'. 
 
