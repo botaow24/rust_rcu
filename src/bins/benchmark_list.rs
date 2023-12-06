@@ -8,7 +8,6 @@ use std::time::Instant;
 use rcu::rcu_list;
 
 
-
 static N_READERS: u32 = 6;
 static N_WRITER:u32=1;
 
@@ -150,7 +149,7 @@ pub fn benchmark_gp() {
         lst.push_back(gen_node(vector_size));
         lst.push_back(gen_node(vector_size));
 
-        let mut rcu = rcu::rcu_list::RcuList::gen_list(N_WRITER+ N_READERS, lst);
+        let mut rcu = rcu_list::RcuList::gen_list(N_WRITER+ N_READERS, lst);
 
         let mgn = Arc::new(BenchmarkInfo::new());
 

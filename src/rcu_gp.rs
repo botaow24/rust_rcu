@@ -179,10 +179,6 @@ fn is_busy(ctr: &AtomicU32, global_ctr: u32) -> bool {
 }
 
 
-pub fn gen_tokens<T>(num: u32, data: T) -> Vec<RcuCell<T>> {
-    return  RcuCell::gen_tokens(num, data);
-}
-
 
 impl<'a,T> RcuCell<T> {
     // user can not use this one

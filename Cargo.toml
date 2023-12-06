@@ -3,6 +3,11 @@ name = "hello_world"
 version = "0.1.0"
 edition = "2021"
 
+
+[[bin]]
+name = "example"
+path = "src/bins/example.rs"
+
 [[bin]]
 name = "benchmark"
 path = "src/bins/benchmark.rs"
